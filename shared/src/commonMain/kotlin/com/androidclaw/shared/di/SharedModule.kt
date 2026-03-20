@@ -7,6 +7,7 @@ import com.androidclaw.shared.llm.ClaudeStreamingClient
 import com.androidclaw.shared.memory.ConversationRepository
 import com.androidclaw.shared.memory.ConversationRepositoryImpl
 import com.androidclaw.shared.network.createHttpClient
+import com.androidclaw.shared.tools.DeviceActionBridge
 import com.androidclaw.shared.tools.ToolRegistry
 import org.koin.dsl.module
 
@@ -16,7 +17,13 @@ val sharedModule = module {
     single { AndroidClawDb(get()) }
     single<ConversationRepository> { ConversationRepositoryImpl(get()) }
     single { ClaudeStreamingClient(get(), getProperty("baseUrl", "http://10.0.2.2:8080")) }
-    single { ToolRegistry(get(), getProperty("tavilyApiKey", "")) }
+    single {
+        ToolRegistry(
+            httpClient = get(),
+            tavilyApiKey = getProperty("tavilyApiKey", ""),
+            deviceBridge = getOrNull()
+        )
+    }
     single { AgentConfig() }
     factory { AgentLoop(get(), get<ToolRegistry>().getTools(), get(), get()) }
 }

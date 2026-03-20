@@ -5,7 +5,8 @@ import io.ktor.client.*
 
 class ToolRegistry(
     private val httpClient: HttpClient,
-    private val tavilyApiKey: String = ""
+    private val tavilyApiKey: String = "",
+    private val deviceBridge: DeviceActionBridge? = null
 ) {
     fun getTools(): List<Tool> {
         val tools = mutableListOf<Tool>()
@@ -14,7 +15,15 @@ class ToolRegistry(
             tools.add(WebSearchTool(httpClient, tavilyApiKey))
         }
 
-        // Phase 2: Add device control tools here
+        // Phase 2: Device control tools
+        deviceBridge?.let { bridge ->
+            tools.add(DeviceSettingsTool(bridge))
+            tools.add(AppLauncherTool(bridge))
+            tools.add(ClipboardTool(bridge))
+            tools.add(AlarmTimerTool(bridge))
+            tools.add(NotificationTool(bridge))
+        }
+
         // Phase 3: Add browse tools here
         // Phase 4: Add code execution tools here
 

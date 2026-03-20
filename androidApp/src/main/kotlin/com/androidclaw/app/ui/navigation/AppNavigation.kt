@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.androidclaw.app.ui.chat.ChatScreen
 import com.androidclaw.app.ui.conversations.ConversationListScreen
+import com.androidclaw.app.ui.settings.ModelManagementScreen
 
 @Composable
 fun AppNavigation() {
@@ -21,6 +22,9 @@ fun AppNavigation() {
                 },
                 onNewConversation = { conversationId ->
                     navController.navigate("chat/$conversationId")
+                },
+                onSettingsClick = {
+                    navController.navigate("settings/models")
                 }
             )
         }
@@ -31,6 +35,12 @@ fun AppNavigation() {
             val conversationId = backStackEntry.arguments?.getString("conversationId") ?: return@composable
             ChatScreen(
                 conversationId = conversationId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings/models") {
+            ModelManagementScreen(
                 onBack = { navController.popBackStack() }
             )
         }

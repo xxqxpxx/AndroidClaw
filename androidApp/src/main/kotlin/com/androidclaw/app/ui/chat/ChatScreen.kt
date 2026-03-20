@@ -1,5 +1,10 @@
 package com.androidclaw.app.ui.chat
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,11 +13,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.androidclaw.app.voice.VoicePipeline
+import com.androidclaw.app.voice.VoicePipelineState
 import com.androidclaw.shared.models.MessageRole
 import com.androidclaw.shared.models.MessageUiModel
 import kotlinx.coroutines.launch
@@ -28,9 +38,14 @@ fun ChatScreen(
     // In a real app, inject via Koin ViewModelFactory
     val agentLoop = koinInject<com.androidclaw.shared.agent.AgentLoop>()
     val conversationRepo = koinInject<com.androidclaw.shared.memory.ConversationRepository>()
+    val context = LocalContext.current
 
     val viewModel = remember {
         ChatViewModel(agentLoop, conversationRepo, conversationId)
+    }
+
+    val voicePipeline = remember {
+        VoicePipeline(context, agentLoop, conversationRepo)
     }
 
     val messages by viewModel.messages.collectAsState()
@@ -38,9 +53,35 @@ fun ChatScreen(
     val isLoading by viewModel.isLoading.collectAsState()
     val activeToolName by viewModel.activeToolName.collectAsState()
 
+    val voiceState by voicePipeline.state.collectAsState()
+    val lastTranscription by voicePipeline.lastTranscription.collectAsState()
+    val isVoiceActive = voiceState != VoicePipelineState.IDLE && voiceState != VoicePipelineState.ERROR
+
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    // Mic permission launcher
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            voicePipeline.startRecordingManually()
+        }
+    }
+
+    // When transcription arrives, send it as a message
+    LaunchedEffect(lastTranscription) {
+        val text = lastTranscription
+        if (text.isNotBlank()) {
+            viewModel.sendMessage(text)
+        }
+    }
+
+    // Cleanup voice pipeline on dispose
+    DisposableEffect(Unit) {
+        onDispose { voicePipeline.release() }
+    }
 
     // Auto-scroll to bottom when new messages arrive
     LaunchedEffect(messages.size, streamingText) {
@@ -104,6 +145,13 @@ fun ChatScreen(
                         ToolCallIndicator(toolName = activeToolName!!)
                     }
                 }
+
+                // Voice state indicator
+                if (isVoiceActive) {
+                    item("voice_state") {
+                        VoiceStateIndicator(state = voiceState)
+                    }
+                }
             }
 
             // Input bar
@@ -138,10 +186,32 @@ fun ChatScreen(
                         Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
                     }
                     IconButton(
-                        onClick = { /* Voice input - Step 9 */ },
-                        enabled = !isLoading
+                        onClick = {
+                            if (isVoiceActive) {
+                                voicePipeline.stopListening()
+                            } else {
+                                val hasMicPermission = ContextCompat.checkSelfPermission(
+                                    context, Manifest.permission.RECORD_AUDIO
+                                ) == PackageManager.PERMISSION_GRANTED
+                                if (hasMicPermission) {
+                                    voicePipeline.startRecordingManually()
+                                } else {
+                                    micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            }
+                        },
+                        enabled = !isLoading || isVoiceActive
                     ) {
-                        Icon(Icons.Default.Mic, contentDescription = "Voice")
+                        val micColor by animateColorAsState(
+                            if (isVoiceActive) MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface,
+                            label = "micColor"
+                        )
+                        Icon(
+                            imageVector = if (isVoiceActive) Icons.Default.MicOff else Icons.Default.Mic,
+                            contentDescription = if (isVoiceActive) "Stop recording" else "Voice input",
+                            tint = micColor
+                        )
                     }
                 }
             }
@@ -160,10 +230,38 @@ private fun ToolCallIndicator(toolName: String) {
         Text(
             text = when (toolName) {
                 "web_search" -> "Searching the web..."
+                "device_settings" -> "Adjusting device settings..."
+                "app_launcher" -> "Working with apps..."
+                "clipboard" -> "Accessing clipboard..."
+                "alarm_timer" -> "Setting alarm/timer..."
+                "notifications" -> "Checking notifications..."
                 else -> "Using $toolName..."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun VoiceStateIndicator(state: VoicePipelineState) {
+    Row(
+        modifier = Modifier.padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        Text(
+            text = when (state) {
+                VoicePipelineState.LISTENING -> "Listening for wake word..."
+                VoicePipelineState.RECORDING -> "Recording... speak now"
+                VoicePipelineState.TRANSCRIBING -> "Transcribing speech..."
+                VoicePipelineState.THINKING -> "Thinking..."
+                VoicePipelineState.SPEAKING -> "Speaking response..."
+                else -> ""
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary
         )
     }
 }

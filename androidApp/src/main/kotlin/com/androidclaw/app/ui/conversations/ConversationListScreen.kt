@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,7 +21,8 @@ import org.koin.compose.koinInject
 @Composable
 fun ConversationListScreen(
     onConversationClick: (String) -> Unit,
-    onNewConversation: (String) -> Unit
+    onNewConversation: (String) -> Unit,
+    onSettingsClick: () -> Unit = {}
 ) {
     val conversationRepo = koinInject<ConversationRepository>()
     val conversations by conversationRepo.getConversations().collectAsState(initial = emptyList())
@@ -28,7 +30,14 @@ fun ConversationListScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("AndroidClaw") })
+            TopAppBar(
+                title = { Text("AndroidClaw") },
+                actions = {
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                    }
+                }
+            )
         },
         floatingActionButton = {
             FloatingActionButton(
