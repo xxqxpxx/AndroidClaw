@@ -1,0 +1,22 @@
+CREATE TABLE Conversation (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    is_archived INTEGER NOT NULL DEFAULT 0
+);
+
+getAllConversations:
+SELECT * FROM Conversation WHERE is_archived = 0 ORDER BY updated_at DESC;
+
+getConversation:
+SELECT * FROM Conversation WHERE id = ?;
+
+insertConversation:
+INSERT INTO Conversation(id, title, created_at, updated_at) VALUES (?, ?, ?, ?);
+
+updateTitle:
+UPDATE Conversation SET title = ?, updated_at = ? WHERE id = ?;
+
+archiveConversation:
+UPDATE Conversation SET is_archived = 1, updated_at = ? WHERE id = ?;

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>processing</string>
+    </array>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>AndroidClaw needs microphone access for voice commands and speech recognition.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>AndroidClaw uses speech recognition to understand your voice commands.</string>
+</dict>
+</plist>

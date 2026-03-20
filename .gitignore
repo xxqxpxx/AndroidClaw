@@ -1,0 +1,33 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.aab
+*.dex
+*.class
+*.log
+*.tmp
+*.bak
+*.swp
+gen/
+out/
+# Kotlin
+*.kotlin_module
+# Android
+/androidApp/build/
+/shared/build/
+/backend/build/
+/iosApp/build/
+# Models (downloaded at runtime)
+*.bin
+*.onnx
+*.gguf
+# Environment
+.env
+*.ppn
