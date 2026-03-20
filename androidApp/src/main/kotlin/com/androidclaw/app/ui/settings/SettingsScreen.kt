@@ -1,6 +1,5 @@
 package com.androidclaw.app.ui.settings
 
-import android.content.Context
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -11,8 +10,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.androidclaw.app.settings.SettingsManager
+import com.androidclaw.app.settings.ThemeMode
+import org.koin.compose.koinInject
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -20,24 +21,15 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToModels: () -> Unit
 ) {
-    val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences("androidclaw_settings", Context.MODE_PRIVATE) }
+    val settings = koinInject<SettingsManager>()
 
-    var serverUrl by remember { mutableStateOf(prefs.getString("server_url", "http://10.0.2.2:8080") ?: "") }
-    var selectedModel by remember { mutableStateOf(prefs.getString("model", "claude-sonnet-4-20250514") ?: "") }
-    var voiceEnabled by remember { mutableStateOf(prefs.getBoolean("voice_enabled", true)) }
-    var alwaysListening by remember { mutableStateOf(prefs.getBoolean("always_listening", false)) }
-    var hapticFeedback by remember { mutableStateOf(prefs.getBoolean("haptic_feedback", true)) }
-
-    fun savePrefs() {
-        prefs.edit()
-            .putString("server_url", serverUrl)
-            .putString("model", selectedModel)
-            .putBoolean("voice_enabled", voiceEnabled)
-            .putBoolean("always_listening", alwaysListening)
-            .putBoolean("haptic_feedback", hapticFeedback)
-            .apply()
-    }
+    var serverUrl by remember { mutableStateOf(settings.serverUrl.value) }
+    val selectedModel by settings.model.collectAsState()
+    val themeMode by settings.themeMode.collectAsState()
+    val dynamicColors by settings.dynamicColors.collectAsState()
+    val voiceEnabled by settings.voiceEnabled.collectAsState()
+    val alwaysListening by settings.alwaysListening.collectAsState()
+    val hapticFeedback by settings.hapticFeedback.collectAsState()
 
     Scaffold(
         topBar = {
@@ -58,20 +50,13 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Server section
-            item {
-                Text(
-                    "Connection",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                )
-            }
+            // Connection section
+            item { SectionHeader("Connection") }
 
             item {
                 OutlinedTextField(
                     value = serverUrl,
-                    onValueChange = { serverUrl = it; savePrefs() },
+                    onValueChange = { serverUrl = it; settings.setServerUrl(it) },
                     label = { Text("Backend Server URL") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -79,14 +64,7 @@ fun SettingsScreen(
             }
 
             // Model section
-            item {
-                Text(
-                    "AI Model",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                )
-            }
+            item { SectionHeader("AI Model") }
 
             item {
                 var expanded by remember { mutableStateOf(false) }
@@ -107,60 +85,78 @@ fun SettingsScreen(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         models.forEach { (id, label) ->
                             DropdownMenuItem(
                                 text = { Text(label) },
-                                onClick = {
-                                    selectedModel = id
-                                    expanded = false
-                                    savePrefs()
-                                }
+                                onClick = { settings.setModel(id); expanded = false }
                             )
                         }
                     }
                 }
             }
 
-            // Speech section
+            // Appearance section
+            item { SectionHeader("Appearance") }
+
             item {
-                Text(
-                    "Voice & Speech",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                var expanded by remember { mutableStateOf(false) }
+                val themes = listOf(
+                    ThemeMode.SYSTEM to "System Default",
+                    ThemeMode.LIGHT to "Light",
+                    ThemeMode.DARK to "Dark"
+                )
+                ExposedDropdownMenuBox(
+                    expanded = expanded,
+                    onExpandedChange = { expanded = !expanded }
+                ) {
+                    OutlinedTextField(
+                        value = themes.find { it.first == themeMode }?.second ?: "System Default",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Theme") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        themes.forEach { (mode, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { settings.setThemeMode(mode); expanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsToggle(
+                    title = "Dynamic Colors",
+                    subtitle = "Use Material You colors from your wallpaper (Android 12+)",
+                    checked = dynamicColors,
+                    onCheckedChange = { settings.setDynamicColors(it) }
+                )
+            }
+
+            // Voice section
+            item { SectionHeader("Voice & Speech") }
+
+            item {
+                SettingsToggle(
+                    title = "Voice Input",
+                    subtitle = "Enable microphone for voice chat",
+                    checked = voiceEnabled,
+                    onCheckedChange = { settings.setVoiceEnabled(it) }
                 )
             }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Voice Input", style = MaterialTheme.typography.bodyLarge)
-                        Text("Enable microphone for voice chat", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = voiceEnabled, onCheckedChange = { voiceEnabled = it; savePrefs() })
-                }
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Always Listening", style = MaterialTheme.typography.bodyLarge)
-                        Text("Keep listening in background with wake word", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = alwaysListening, onCheckedChange = { alwaysListening = it; savePrefs() })
-                }
+                SettingsToggle(
+                    title = "Always Listening",
+                    subtitle = "Keep listening in background with wake word",
+                    checked = alwaysListening,
+                    onCheckedChange = { settings.setAlwaysListening(it) }
+                )
             }
 
             item {
@@ -175,38 +171,56 @@ fun SettingsScreen(
             }
 
             // General section
-            item {
-                Text(
-                    "General",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
-                )
-            }
+            item { SectionHeader("General") }
 
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Haptic Feedback", style = MaterialTheme.typography.bodyLarge)
-                        Text("Vibrate on actions", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(checked = hapticFeedback, onCheckedChange = { hapticFeedback = it; savePrefs() })
-                }
+                SettingsToggle(
+                    title = "Haptic Feedback",
+                    subtitle = "Vibrate on actions",
+                    checked = hapticFeedback,
+                    onCheckedChange = { settings.setHapticFeedback(it) }
+                )
             }
 
             item {
                 Spacer(Modifier.height(32.dp))
                 Text(
-                    "AndroidClaw v0.2.0",
+                    "AndroidClaw v0.3.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(bottom = 16.dp)
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+private fun SettingsToggle(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }

@@ -2,6 +2,7 @@ package com.androidclaw.app
 
 import android.app.Application
 import com.androidclaw.app.platform.AndroidDeviceActionBridge
+import com.androidclaw.app.settings.SettingsManager
 import com.androidclaw.shared.di.platformModule
 import com.androidclaw.shared.di.sharedModule
 import com.androidclaw.shared.tools.DeviceActionBridge
@@ -14,6 +15,7 @@ class AndroidClawApp : Application() {
         super.onCreate()
 
         val appModule = module {
+            single { SettingsManager(get()) }
             single<DeviceActionBridge> { AndroidDeviceActionBridge(get()) }
         }
 

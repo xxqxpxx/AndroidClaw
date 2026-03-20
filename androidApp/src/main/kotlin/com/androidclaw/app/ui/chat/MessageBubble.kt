@@ -43,10 +43,16 @@ fun MessageBubble(message: MessageUiModel) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                 }
-                Text(
-                    text = message.content,
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                if (isUser) {
+                    // User messages: plain text
+                    Text(
+                        text = message.content,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    // Assistant messages: render Markdown
+                    MarkdownText(text = message.content)
+                }
                 if (message.isStreaming) {
                     Spacer(modifier = Modifier.height(4.dp))
                     LinearProgressIndicator(

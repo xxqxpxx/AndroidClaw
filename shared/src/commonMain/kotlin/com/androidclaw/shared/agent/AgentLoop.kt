@@ -20,7 +20,8 @@ class AgentLoop(
     private val client: ClaudeStreamingClient,
     private val tools: List<Tool>,
     private val conversationRepo: ConversationRepository,
-    private val config: AgentConfig = AgentConfig()
+    private val config: AgentConfig = AgentConfig(),
+    private val contextManager: ContextManager = ContextManager()
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val toolMap = tools.associateBy { it.name }
@@ -159,7 +160,8 @@ class AgentLoop(
     }
 
     private suspend fun buildMessageHistory(conversationId: String): List<ClaudeMessage> {
-        val messages = conversationRepo.getMessagesSnapshot(conversationId)
+        val allMessages = conversationRepo.getMessagesSnapshot(conversationId)
+        val messages = contextManager.trimToFit(allMessages)
         return messages.mapNotNull { msg ->
             when (msg.role) {
                 MessageRole.USER -> ClaudeMessage.user(msg.content)
