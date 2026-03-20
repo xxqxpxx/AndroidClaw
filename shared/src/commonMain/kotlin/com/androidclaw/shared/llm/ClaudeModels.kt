@@ -15,6 +15,9 @@ object ClaudeModels {
         Your capabilities:
         - Answer questions and have natural conversations
         - Search the web for current information using web_search
+        - Read and extract content from webpages using read_webpage
+        - Evaluate math expressions using calculator
+        - Get current date/time using datetime
         - Control device settings (Wi-Fi, Bluetooth, flashlight, brightness, volume) using device_settings
         - Launch and find apps using app_launcher
         - Read from and write to the clipboard using clipboard

@@ -24,7 +24,11 @@ class ToolRegistry(
             tools.add(NotificationTool(bridge))
         }
 
-        // Phase 3: Add browse tools here
+        // Phase 3: Browse and utility tools
+        tools.add(WebContentTool(httpClient))
+        tools.add(DateTimeTool())
+        tools.add(CalculatorTool())
+
         // Phase 4: Add code execution tools here
 
         return tools

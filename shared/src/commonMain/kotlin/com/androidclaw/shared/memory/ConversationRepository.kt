@@ -21,4 +21,6 @@ interface ConversationRepository {
     suspend fun updateTitle(conversationId: String, title: String)
     suspend fun archiveConversation(conversationId: String)
     suspend fun getMessagesSnapshot(conversationId: String): List<MessageUiModel>
+    suspend fun getConversationsSnapshot(): List<ConversationUiModel>
+    suspend fun deleteConversation(conversationId: String)
 }

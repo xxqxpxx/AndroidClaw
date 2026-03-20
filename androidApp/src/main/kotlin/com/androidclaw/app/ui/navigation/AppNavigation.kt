@@ -9,6 +9,7 @@ import androidx.navigation.navArgument
 import com.androidclaw.app.ui.chat.ChatScreen
 import com.androidclaw.app.ui.conversations.ConversationListScreen
 import com.androidclaw.app.ui.settings.ModelManagementScreen
+import com.androidclaw.app.ui.settings.SettingsScreen
 
 @Composable
 fun AppNavigation() {
@@ -24,7 +25,7 @@ fun AppNavigation() {
                     navController.navigate("chat/$conversationId")
                 },
                 onSettingsClick = {
-                    navController.navigate("settings/models")
+                    navController.navigate("settings")
                 }
             )
         }
@@ -36,6 +37,13 @@ fun AppNavigation() {
             ChatScreen(
                 conversationId = conversationId,
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings") {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
+                onNavigateToModels = { navController.navigate("settings/models") }
             )
         }
 

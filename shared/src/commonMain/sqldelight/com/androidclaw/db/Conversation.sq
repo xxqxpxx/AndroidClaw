@@ -20,3 +20,9 @@ UPDATE Conversation SET title = ?, updated_at = ? WHERE id = ?;
 
 archiveConversation:
 UPDATE Conversation SET is_archived = 1, updated_at = ? WHERE id = ?;
+
+deleteConversation:
+DELETE FROM Conversation WHERE id = ?;
+
+getConversationCount:
+SELECT COUNT(*) FROM Conversation WHERE is_archived = 0;

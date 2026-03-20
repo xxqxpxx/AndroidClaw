@@ -1,6 +1,7 @@
 package com.androidclaw.app.ui.chat
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.androidclaw.app.voice.VoicePipeline
 import com.androidclaw.app.voice.VoicePipelineState
+import com.androidclaw.shared.memory.ConversationExporter
 import com.androidclaw.shared.models.MessageRole
 import com.androidclaw.shared.models.MessageUiModel
 import kotlinx.coroutines.launch
@@ -100,6 +103,22 @@ fun ChatScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = {
+                        scope.launch {
+                            val exporter = ConversationExporter(conversationRepo)
+                            val markdown = exporter.exportToMarkdown(conversationId)
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, markdown)
+                                putExtra(Intent.EXTRA_SUBJECT, "AndroidClaw Conversation")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Share conversation"))
+                        }
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Share")
                     }
                 }
             )

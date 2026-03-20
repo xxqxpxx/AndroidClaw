@@ -106,6 +106,25 @@ class ConversationRepositoryImpl(
                 .map { it.toUiModel() }
         }
 
+    override suspend fun getConversationsSnapshot(): List<ConversationUiModel> =
+        withContext(Dispatchers.Default) {
+            conversationQueries.getAllConversations()
+                .executeAsList()
+                .map { conv ->
+                    ConversationUiModel(
+                        id = conv.id,
+                        title = conv.title.ifEmpty { "New Conversation" },
+                        lastMessage = null,
+                        updatedAt = Instant.fromEpochMilliseconds(conv.updated_at)
+                    )
+                }
+        }
+
+    override suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.Default) {
+        messageQueries.deleteMessagesForConversation(conversationId)
+        conversationQueries.deleteConversation(conversationId)
+    }
+
     private fun com.androidclaw.db.Message.toUiModel() = MessageUiModel(
         id = id,
         role = MessageRole.fromDbString(role),
