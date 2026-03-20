@@ -19,7 +19,9 @@ import org.koin.compose.koinInject
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onNavigateToModels: () -> Unit
+    onNavigateToModels: () -> Unit,
+    onNavigateToPersona: () -> Unit = {},
+    onNavigateToStats: () -> Unit = {}
 ) {
     val settings = koinInject<SettingsManager>()
 
@@ -94,6 +96,17 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("AI Persona") },
+                    supportingContent = { Text("Customize the AI's personality and behavior") },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable(onClick = onNavigateToPersona)
+                )
             }
 
             // Appearance section
@@ -183,9 +196,20 @@ fun SettingsScreen(
             }
 
             item {
+                ListItem(
+                    headlineContent = { Text("Usage Stats") },
+                    supportingContent = { Text("View conversation and tool usage statistics") },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable(onClick = onNavigateToStats)
+                )
+            }
+
+            item {
                 Spacer(Modifier.height(32.dp))
                 Text(
-                    "AndroidClaw v0.3.0",
+                    "AndroidClaw v0.4.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(bottom = 16.dp)

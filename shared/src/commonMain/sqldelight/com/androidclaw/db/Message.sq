@@ -23,3 +23,15 @@ DELETE FROM Message WHERE conversation_id = ?;
 
 getLastMessageForConversation:
 SELECT * FROM Message WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1;
+
+getTotalMessageCount:
+SELECT COUNT(*) FROM Message;
+
+getMessageCountByRole:
+SELECT role, COUNT(*) AS count FROM Message GROUP BY role;
+
+getTotalTokenCount:
+SELECT COALESCE(SUM(token_count), 0) FROM Message;
+
+getToolUsageCounts:
+SELECT tool_name, COUNT(*) AS count FROM Message WHERE tool_name IS NOT NULL GROUP BY tool_name ORDER BY count DESC;

@@ -46,6 +46,12 @@ class SettingsManager(context: Context) {
     private val _maxContextTokens = MutableStateFlow(prefs.getInt(KEY_MAX_CONTEXT_TOKENS, DEFAULT_MAX_CONTEXT_TOKENS))
     val maxContextTokens: StateFlow<Int> = _maxContextTokens.asStateFlow()
 
+    private val _customSystemPrompt = MutableStateFlow(
+        prefs.getString(KEY_CUSTOM_SYSTEM_PROMPT, com.androidclaw.shared.llm.ClaudeModels.DEFAULT_SYSTEM_PROMPT)
+            ?: com.androidclaw.shared.llm.ClaudeModels.DEFAULT_SYSTEM_PROMPT
+    )
+    val customSystemPrompt: StateFlow<String> = _customSystemPrompt.asStateFlow()
+
     fun setServerUrl(url: String) { _serverUrl.value = url; prefs.edit().putString(KEY_SERVER_URL, url).apply() }
     fun setApiKey(key: String) { _apiKey.value = key; prefs.edit().putString(KEY_API_KEY, key).apply() }
     fun setModel(model: String) { _model.value = model; prefs.edit().putString(KEY_MODEL, model).apply() }
@@ -56,6 +62,7 @@ class SettingsManager(context: Context) {
     fun setHapticFeedback(enabled: Boolean) { _hapticFeedback.value = enabled; prefs.edit().putBoolean(KEY_HAPTIC_FEEDBACK, enabled).apply() }
     fun setOnboardingCompleted(completed: Boolean) { _onboardingCompleted.value = completed; prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply() }
     fun setMaxContextTokens(tokens: Int) { _maxContextTokens.value = tokens; prefs.edit().putInt(KEY_MAX_CONTEXT_TOKENS, tokens).apply() }
+    fun setCustomSystemPrompt(prompt: String) { _customSystemPrompt.value = prompt; prefs.edit().putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt).apply() }
 
     val isConfigured: Boolean
         get() = _serverUrl.value.isNotBlank()
@@ -71,6 +78,7 @@ class SettingsManager(context: Context) {
         const val KEY_HAPTIC_FEEDBACK = "haptic_feedback"
         const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         const val KEY_MAX_CONTEXT_TOKENS = "max_context_tokens"
+        const val KEY_CUSTOM_SYSTEM_PROMPT = "custom_system_prompt"
 
         const val DEFAULT_SERVER_URL = "http://10.0.2.2:8080"
         const val DEFAULT_MODEL = "claude-sonnet-4-20250514"

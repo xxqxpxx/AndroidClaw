@@ -14,6 +14,8 @@ import com.androidclaw.app.ui.conversations.ConversationListScreen
 import com.androidclaw.app.ui.onboarding.OnboardingScreen
 import com.androidclaw.app.ui.settings.ModelManagementScreen
 import com.androidclaw.app.ui.settings.SettingsScreen
+import com.androidclaw.app.ui.settings.SystemPromptScreen
+import com.androidclaw.app.ui.settings.UsageStatsScreen
 import org.koin.compose.koinInject
 
 @Composable
@@ -62,12 +64,26 @@ fun AppNavigation() {
         composable("settings") {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
-                onNavigateToModels = { navController.navigate("settings/models") }
+                onNavigateToModels = { navController.navigate("settings/models") },
+                onNavigateToPersona = { navController.navigate("settings/persona") },
+                onNavigateToStats = { navController.navigate("settings/stats") }
             )
         }
 
         composable("settings/models") {
             ModelManagementScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings/persona") {
+            SystemPromptScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings/stats") {
+            UsageStatsScreen(
                 onBack = { navController.popBackStack() }
             )
         }

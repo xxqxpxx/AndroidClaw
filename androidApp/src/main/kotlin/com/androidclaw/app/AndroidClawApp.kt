@@ -1,6 +1,7 @@
 package com.androidclaw.app
 
 import android.app.Application
+import com.androidclaw.app.haptics.HapticManager
 import com.androidclaw.app.platform.AndroidDeviceActionBridge
 import com.androidclaw.app.settings.SettingsManager
 import com.androidclaw.shared.di.platformModule
@@ -16,6 +17,7 @@ class AndroidClawApp : Application() {
 
         val appModule = module {
             single { SettingsManager(get()) }
+            single { HapticManager(get(), get()) }
             single<DeviceActionBridge> { AndroidDeviceActionBridge(get()) }
         }
 
