@@ -23,4 +23,6 @@ interface ConversationRepository {
     suspend fun getMessagesSnapshot(conversationId: String): List<MessageUiModel>
     suspend fun getConversationsSnapshot(): List<ConversationUiModel>
     suspend fun deleteConversation(conversationId: String)
+    suspend fun pinConversation(conversationId: String, pinned: Boolean)
+    suspend fun setCategory(conversationId: String, category: String?)
 }

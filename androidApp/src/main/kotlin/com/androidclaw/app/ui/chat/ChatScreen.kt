@@ -15,6 +15,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Share
@@ -64,8 +67,18 @@ fun ChatScreen(
     val isVoiceActive = voiceState != VoicePipelineState.IDLE && voiceState != VoicePipelineState.ERROR
 
     var inputText by remember { mutableStateOf("") }
+    var pendingImage by remember { mutableStateOf<ImageAttachment.ProcessedImage?>(null) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+
+    // Image picker launcher
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            pendingImage = ImageAttachment.processImage(context, it)
+        }
+    }
 
     // Mic permission launcher
     val micPermissionLauncher = rememberLauncherForActivityResult(
@@ -207,6 +220,30 @@ fun ChatScreen(
                 }
             }
 
+            // Image attachment preview
+            if (pendingImage != null) {
+                Surface(
+                    tonalElevation = 1.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Image attached (${pendingImage!!.width}x${pendingImage!!.height}, ${ImageAttachment.formatSize(pendingImage!!.sizeBytes)})",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { pendingImage = null }, modifier = Modifier.size(24.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
             // Input bar
             Surface(
                 tonalElevation = 2.dp,
@@ -218,6 +255,13 @@ fun ChatScreen(
                         .fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    IconButton(
+                        onClick = { imagePickerLauncher.launch("image/*") },
+                        enabled = !isLoading,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(Icons.Default.AttachFile, contentDescription = "Attach image")
+                    }
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
@@ -226,12 +270,16 @@ fun ChatScreen(
                         maxLines = 4,
                         enabled = !isLoading
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     IconButton(
                         onClick = {
                             if (inputText.isNotBlank()) {
-                                viewModel.sendMessage(inputText)
+                                val imageContext = pendingImage?.let { img ->
+                                    "[Image attached: ${img.width}x${img.height}] "
+                                } ?: ""
+                                viewModel.sendMessage(imageContext + inputText)
                                 inputText = ""
+                                pendingImage = null
                             }
                         },
                         enabled = inputText.isNotBlank() && !isLoading

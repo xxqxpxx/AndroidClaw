@@ -32,12 +32,7 @@ class ConversationRepositoryImpl(
                     val lastMsg = messageQueries
                         .getLastMessageForConversation(conv.id)
                         .executeAsOneOrNull()
-                    ConversationUiModel(
-                        id = conv.id,
-                        title = conv.title.ifEmpty { "New Conversation" },
-                        lastMessage = lastMsg?.content?.take(100),
-                        updatedAt = Instant.fromEpochMilliseconds(conv.updated_at)
-                    )
+                    conv.toUiModel(lastMsg?.content?.take(100))
                 }
             }
     }
@@ -110,20 +105,32 @@ class ConversationRepositoryImpl(
         withContext(Dispatchers.Default) {
             conversationQueries.getAllConversations()
                 .executeAsList()
-                .map { conv ->
-                    ConversationUiModel(
-                        id = conv.id,
-                        title = conv.title.ifEmpty { "New Conversation" },
-                        lastMessage = null,
-                        updatedAt = Instant.fromEpochMilliseconds(conv.updated_at)
-                    )
-                }
+                .map { it.toUiModel() }
         }
 
     override suspend fun deleteConversation(conversationId: String) = withContext(Dispatchers.Default) {
         messageQueries.deleteMessagesForConversation(conversationId)
         conversationQueries.deleteConversation(conversationId)
     }
+
+    override suspend fun pinConversation(conversationId: String, pinned: Boolean) = withContext(Dispatchers.Default) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        conversationQueries.pinConversation(if (pinned) 1L else 0L, now, conversationId)
+    }
+
+    override suspend fun setCategory(conversationId: String, category: String?) = withContext(Dispatchers.Default) {
+        val now = Clock.System.now().toEpochMilliseconds()
+        conversationQueries.setCategory(category, now, conversationId)
+    }
+
+    private fun com.androidclaw.db.Conversation.toUiModel(lastMessage: String? = null) = ConversationUiModel(
+        id = id,
+        title = title.ifEmpty { "New Conversation" },
+        lastMessage = lastMessage,
+        updatedAt = Instant.fromEpochMilliseconds(updated_at),
+        isPinned = is_pinned != 0L,
+        category = category
+    )
 
     private fun com.androidclaw.db.Message.toUiModel() = MessageUiModel(
         id = id,

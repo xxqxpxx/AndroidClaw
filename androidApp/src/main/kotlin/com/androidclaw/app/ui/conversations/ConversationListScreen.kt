@@ -1,8 +1,10 @@
 package com.androidclaw.app.ui.conversations
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -189,7 +192,15 @@ fun ConversationListScreen(
                         content = {
                             ConversationItem(
                                 conversation = conversation,
-                                onClick = { onConversationClick(conversation.id) }
+                                onClick = { onConversationClick(conversation.id) },
+                                onLongClick = {
+                                    scope.launch {
+                                        conversationRepo.pinConversation(
+                                            conversation.id,
+                                            !conversation.isPinned
+                                        )
+                                    }
+                                }
                             )
                         }
                     )
@@ -199,23 +210,48 @@ fun ConversationListScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ConversationItem(
     conversation: ConversationUiModel,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onLongClick: () -> Unit = {}
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = conversation.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (conversation.isPinned) {
+                    Icon(
+                        Icons.Default.PushPin,
+                        contentDescription = "Pinned",
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.width(4.dp))
+                }
+                Text(
+                    text = conversation.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (conversation.category != null) {
+                    Spacer(Modifier.width(8.dp))
+                    SuggestionChip(
+                        onClick = {},
+                        label = { Text(conversation.category!!, style = MaterialTheme.typography.labelSmall) },
+                        modifier = Modifier.height(24.dp)
+                    )
+                }
+            }
             if (conversation.lastMessage != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(

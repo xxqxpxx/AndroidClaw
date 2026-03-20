@@ -18,7 +18,9 @@ data class ConversationUiModel(
     val id: String,
     val title: String,
     val lastMessage: String?,
-    val updatedAt: Instant
+    val updatedAt: Instant,
+    val isPinned: Boolean = false,
+    val category: String? = null
 )
 
 data class MessageUiModel(
