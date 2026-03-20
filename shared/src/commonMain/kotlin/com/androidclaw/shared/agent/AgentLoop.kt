@@ -29,6 +29,9 @@ class AgentLoop(
         // Save user message
         conversationRepo.addMessage(conversationId, MessageRole.USER, userMessage)
 
+        // Auto-title: set conversation title from first user message
+        autoTitleIfNeeded(conversationId, userMessage)
+
         // Build message history
         val messages = buildMessageHistory(conversationId)
         var currentMessages = messages.toMutableList()
@@ -126,6 +129,33 @@ class AgentLoop(
                 break
             }
         }
+    }
+
+    private suspend fun autoTitleIfNeeded(conversationId: String, userMessage: String) {
+        try {
+            val conversations = conversationRepo.getConversationsSnapshot()
+            val conversation = conversations.find { it.id == conversationId }
+            if (conversation != null && (conversation.title.isEmpty() || conversation.title == "New Conversation")) {
+                // Generate title from first message: take first sentence or first N words
+                val title = generateTitle(userMessage)
+                conversationRepo.updateTitle(conversationId, title)
+            }
+        } catch (_: Exception) {
+            // Non-critical - don't fail the conversation
+        }
+    }
+
+    private fun generateTitle(message: String): String {
+        val cleaned = message.trim()
+
+        // Use first sentence if short enough
+        val firstSentence = cleaned.split(Regex("""[.!?]""")).firstOrNull()?.trim() ?: cleaned
+        if (firstSentence.length in 1..50) return firstSentence
+
+        // Otherwise take first few words
+        val words = cleaned.split(Regex("""\s+"""))
+        val titleWords = words.take(6).joinToString(" ")
+        return if (titleWords.length > 50) titleWords.take(47) + "..." else titleWords
     }
 
     private suspend fun buildMessageHistory(conversationId: String): List<ClaudeMessage> {

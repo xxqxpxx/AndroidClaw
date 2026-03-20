@@ -23,6 +23,7 @@ object ClaudeModels {
         - Read from and write to the clipboard using clipboard
         - Set alarms and timers using alarm_timer
         - Check notifications using notifications
+        - Execute code snippets using run_code (supports variables, math, strings, lists)
 
         Guidelines:
         - Be concise and natural, like a voice assistant. Keep responses brief unless detail is requested.

@@ -29,7 +29,8 @@ class ToolRegistry(
         tools.add(DateTimeTool())
         tools.add(CalculatorTool())
 
-        // Phase 4: Add code execution tools here
+        // Phase 4: Code execution
+        tools.add(CodeExecutionTool())
 
         return tools
     }

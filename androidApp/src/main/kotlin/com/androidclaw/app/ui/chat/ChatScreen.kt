@@ -7,6 +7,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,6 +57,7 @@ fun ChatScreen(
     val streamingText by viewModel.streamingText.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val activeToolName by viewModel.activeToolName.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
 
     val voiceState by voicePipeline.state.collectAsState()
     val lastTranscription by voicePipeline.lastTranscription.collectAsState()
@@ -129,6 +132,28 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // Error banner
+            if (errorMessage != null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = errorMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { viewModel.retry() }) { Text("Retry") }
+                        TextButton(onClick = { viewModel.dismissError() }) { Text("Dismiss") }
+                    }
+                }
+            }
+
             // Messages list
             LazyColumn(
                 state = listState,
@@ -139,6 +164,15 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
+                // Quick action suggestions when chat is empty
+                if (messages.isEmpty() && streamingText.isEmpty()) {
+                    item("suggestions") {
+                        QuickActionSuggestions { suggestion ->
+                            viewModel.sendMessage(suggestion)
+                        }
+                    }
+                }
+
                 items(messages, key = { it.id }) { message ->
                     MessageBubble(message = message)
                 }
@@ -239,6 +273,46 @@ fun ChatScreen(
 }
 
 @Composable
+private fun QuickActionSuggestions(onSuggestionClick: (String) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            "How can I help?",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(16.dp))
+
+        val suggestions = listOf(
+            "What's the weather like today?" to "web_search",
+            "Turn on the flashlight" to "device_settings",
+            "Set a timer for 5 minutes" to "alarm_timer",
+            "What time is it?" to "datetime",
+            "Search for a good recipe" to "web_search",
+            "What apps do I have installed?" to "app_launcher"
+        )
+
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            suggestions.forEach { (text, _) ->
+                SuggestionChip(
+                    onClick = { onSuggestionClick(text) },
+                    label = { Text(text, maxLines = 1) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ToolCallIndicator(toolName: String) {
     Row(
         modifier = Modifier.padding(vertical = 4.dp),
@@ -254,6 +328,10 @@ private fun ToolCallIndicator(toolName: String) {
                 "clipboard" -> "Accessing clipboard..."
                 "alarm_timer" -> "Setting alarm/timer..."
                 "notifications" -> "Checking notifications..."
+                "read_webpage" -> "Reading webpage..."
+                "calculator" -> "Calculating..."
+                "datetime" -> "Getting date/time..."
+                "run_code" -> "Running code..."
                 else -> "Using $toolName..."
             },
             style = MaterialTheme.typography.bodySmall,
