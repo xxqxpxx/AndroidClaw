@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -167,12 +168,16 @@ fun ChatScreen(
                 }
             }
 
-            // Messages list
+            // Messages list with scroll-to-bottom FAB
+            val showScrollButton by remember {
+                derivedStateOf { listState.firstVisibleItemIndex < (messages.size - 3).coerceAtLeast(0) && messages.size > 5 }
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 8.dp)
@@ -219,6 +224,22 @@ fun ChatScreen(
                     }
                 }
             }
+
+            // Scroll-to-bottom FAB
+            if (showScrollButton) {
+                SmallFloatingActionButton(
+                    onClick = {
+                        scope.launch { listState.animateScrollToItem(messages.size.coerceAtLeast(1) - 1) }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                ) {
+                    Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Scroll to bottom")
+                }
+            }
+            } // End Box
 
             // Image attachment preview
             if (pendingImage != null) {

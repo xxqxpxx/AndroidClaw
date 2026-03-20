@@ -21,6 +21,8 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.androidclaw.shared.models.MessageRole
 import com.androidclaw.shared.models.MessageUiModel
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -78,6 +80,15 @@ fun MessageBubble(message: MessageUiModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(2.dp)
+                    )
+                }
+                if (!message.isStreaming) {
+                    val localTime = message.createdAt.toLocalDateTime(TimeZone.currentSystemDefault())
+                    Text(
+                        text = "${localTime.hour.toString().padStart(2, '0')}:${localTime.minute.toString().padStart(2, '0')}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 2.dp)
                     )
                 }
             }

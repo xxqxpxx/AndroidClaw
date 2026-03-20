@@ -4,6 +4,7 @@ import android.app.Application
 import com.androidclaw.app.haptics.HapticManager
 import com.androidclaw.app.platform.AndroidDeviceActionBridge
 import com.androidclaw.app.settings.SettingsManager
+import com.androidclaw.app.shortcuts.AppShortcuts
 import com.androidclaw.shared.di.platformModule
 import com.androidclaw.shared.di.sharedModule
 import com.androidclaw.shared.tools.DeviceActionBridge
@@ -25,5 +26,7 @@ class AndroidClawApp : Application() {
             androidContext(this@AndroidClawApp)
             modules(sharedModule, platformModule, appModule)
         }
+
+        AppShortcuts.setup(this)
     }
 }

@@ -12,7 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.ManageSearch
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
@@ -31,7 +33,8 @@ import org.koin.compose.koinInject
 fun ConversationListScreen(
     onConversationClick: (String) -> Unit,
     onNewConversation: (String) -> Unit,
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    onGlobalSearchClick: () -> Unit = {}
 ) {
     val conversationRepo = koinInject<ConversationRepository>()
     val conversations by conversationRepo.getConversations().collectAsState(initial = emptyList())
@@ -39,6 +42,8 @@ fun ConversationListScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchVisible by remember { mutableStateOf(false) }
     var conversationToDelete by remember { mutableStateOf<ConversationUiModel?>(null) }
+    var conversationToRename by remember { mutableStateOf<ConversationUiModel?>(null) }
+    var longPressedConversation by remember { mutableStateOf<ConversationUiModel?>(null) }
 
     val filteredConversations = remember(conversations, searchQuery) {
         if (searchQuery.isBlank()) conversations
@@ -67,6 +72,69 @@ fun ConversationListScreen(
             },
             dismissButton = {
                 TextButton(onClick = { conversationToDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Rename dialog
+    conversationToRename?.let { conv ->
+        RenameConversationDialog(
+            currentTitle = conv.title,
+            onConfirm = { newTitle ->
+                scope.launch {
+                    conversationRepo.renameConversation(conv.id, newTitle)
+                }
+                conversationToRename = null
+            },
+            onDismiss = { conversationToRename = null }
+        )
+    }
+
+    // Long-press menu
+    longPressedConversation?.let { conv ->
+        AlertDialog(
+            onDismissRequest = { longPressedConversation = null },
+            title = { Text(conv.title.ifBlank { "Conversation" }) },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        scope.launch { conversationRepo.pinConversation(conv.id, !conv.isPinned) }
+                        longPressedConversation = null
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PushPin, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (conv.isPinned) "Unpin" else "Pin")
+                        }
+                    }
+                    TextButton(onClick = {
+                        conversationToRename = conv
+                        longPressedConversation = null
+                    }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Rename")
+                        }
+                    }
+                    TextButton(
+                        onClick = {
+                            conversationToDelete = conv
+                            longPressedConversation = null
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { longPressedConversation = null }) { Text("Cancel") }
             }
         )
     }
@@ -102,7 +170,10 @@ fun ConversationListScreen(
                     title = { Text("AndroidClaw") },
                     actions = {
                         IconButton(onClick = { isSearchVisible = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Search")
+                            Icon(Icons.Default.Search, contentDescription = "Filter conversations")
+                        }
+                        IconButton(onClick = onGlobalSearchClick) {
+                            Icon(Icons.Default.ManageSearch, contentDescription = "Search all messages")
                         }
                         IconButton(onClick = onSettingsClick) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -193,14 +264,7 @@ fun ConversationListScreen(
                             ConversationItem(
                                 conversation = conversation,
                                 onClick = { onConversationClick(conversation.id) },
-                                onLongClick = {
-                                    scope.launch {
-                                        conversationRepo.pinConversation(
-                                            conversation.id,
-                                            !conversation.isPinned
-                                        )
-                                    }
-                                }
+                                onLongClick = { longPressedConversation = conversation }
                             )
                         }
                     )

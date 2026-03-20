@@ -25,4 +25,5 @@ interface ConversationRepository {
     suspend fun deleteConversation(conversationId: String)
     suspend fun pinConversation(conversationId: String, pinned: Boolean)
     suspend fun setCategory(conversationId: String, category: String?)
+    suspend fun renameConversation(conversationId: String, newTitle: String) = updateTitle(conversationId, newTitle)
 }

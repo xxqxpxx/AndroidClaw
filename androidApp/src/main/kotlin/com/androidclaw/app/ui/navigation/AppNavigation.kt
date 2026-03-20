@@ -14,6 +14,7 @@ import com.androidclaw.app.ui.conversations.ConversationListScreen
 import com.androidclaw.app.ui.onboarding.OnboardingScreen
 import com.androidclaw.app.ui.settings.ModelManagementScreen
 import com.androidclaw.app.ui.settings.SettingsScreen
+import com.androidclaw.app.ui.search.GlobalSearchScreen
 import com.androidclaw.app.ui.settings.SystemPromptScreen
 import com.androidclaw.app.ui.settings.UsageStatsScreen
 import org.koin.compose.koinInject
@@ -47,6 +48,9 @@ fun AppNavigation() {
                 },
                 onSettingsClick = {
                     navController.navigate("settings")
+                },
+                onGlobalSearchClick = {
+                    navController.navigate("search")
                 }
             )
         }
@@ -85,6 +89,15 @@ fun AppNavigation() {
         composable("settings/stats") {
             UsageStatsScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("search") {
+            GlobalSearchScreen(
+                onBack = { navController.popBackStack() },
+                onConversationClick = { conversationId ->
+                    navController.navigate("chat/$conversationId")
+                }
             )
         }
     }
