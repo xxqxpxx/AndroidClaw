@@ -4,6 +4,7 @@ import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.http.content.TextContent
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -31,24 +32,28 @@ class ClaudeStreamingClient(
         val useDirectApi = !apiKey.isNullOrBlank()
         val url = if (useDirectApi) ANTHROPIC_API_URL else "$baseUrl/api/chat"
 
-        val response = httpClient.preparePost(url) {
-            contentType(ContentType.Application.Json)
-            setBody(json.encodeToString(ClaudeRequest.serializer(), request))
+        val jsonBody = json.encodeToString(ClaudeRequest.serializer(), request)
+        println("AndroidClaw: Sending request to $url, body length=${jsonBody.length}")
+
+        httpClient.preparePost(url) {
+            // Use TextContent to bypass ContentNegotiation double-serialization
+            setBody(TextContent(jsonBody, ContentType.Application.Json))
             if (useDirectApi) {
                 header("x-api-key", apiKey)
                 header("anthropic-version", ANTHROPIC_VERSION)
             } else {
                 authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
             }
-            header(HttpHeaders.Accept, "text/event-stream")
         }.execute { response ->
+            println("AndroidClaw: Response status=${response.status}")
             if (!response.status.isSuccess()) {
+                val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
+                println("AndroidClaw: Error response body=$errorBody")
                 emit(ClaudeStreamEvent.Error("HTTP ${response.status.value}: ${response.status.description}"))
                 return@execute
             }
 
             val channel = response.bodyAsChannel()
-            val buffer = StringBuilder()
 
             while (!channel.isClosedForRead) {
                 val line = channel.readUTF8Line() ?: break
@@ -65,6 +70,7 @@ class ClaudeStreamingClient(
                     }
                 }
             }
+            println("AndroidClaw: Stream completed")
         }
     }
 

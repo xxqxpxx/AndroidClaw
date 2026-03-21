@@ -19,7 +19,11 @@ class SettingsManager(context: Context) {
     private val _serverUrl = MutableStateFlow(prefs.getString(KEY_SERVER_URL, DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL)
     val serverUrl: StateFlow<String> = _serverUrl.asStateFlow()
 
-    private val _apiKey = MutableStateFlow(prefs.getString(KEY_API_KEY, "") ?: "")
+    private val _apiKey = MutableStateFlow(
+        prefs.getString(KEY_API_KEY, "").let { stored ->
+            if (stored.isNullOrBlank()) com.androidclaw.app.BuildConfig.DEFAULT_API_KEY else stored
+        }
+    )
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
 
     private val _model = MutableStateFlow(prefs.getString(KEY_MODEL, DEFAULT_MODEL) ?: DEFAULT_MODEL)
