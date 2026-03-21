@@ -3,6 +3,7 @@ package com.androidclaw.shared.tools
 import com.androidclaw.shared.agent.Tool
 import com.androidclaw.shared.agent.ToolResult
 import kotlinx.serialization.json.*
+import kotlin.math.pow
 
 class CalculatorTool : Tool {
 
@@ -110,7 +111,7 @@ class CalculatorTool : Tool {
         var p = nextPos
         if (p < tokens.size && tokens[p] == "^") {
             val (exp, newPos) = parsePower(tokens, p + 1) // right-associative
-            base = Math.pow(base, exp)
+            base = base.pow(exp)
             p = newPos
         }
         return Pair(base, p)
