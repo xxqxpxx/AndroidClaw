@@ -15,21 +15,28 @@ class ToolRegistry(
             tools.add(WebSearchTool(httpClient, tavilyApiKey))
         }
 
-        // Phase 2: Device control tools
+        // Device control tools
         deviceBridge?.let { bridge ->
             tools.add(DeviceSettingsTool(bridge))
             tools.add(AppLauncherTool(bridge))
             tools.add(ClipboardTool(bridge))
             tools.add(AlarmTimerTool(bridge))
             tools.add(NotificationTool(bridge))
+            tools.add(ContactsTool(bridge))
+            tools.add(CalendarTool(bridge))
+            tools.add(SmsTool(bridge))
+            tools.add(PhoneTool(bridge))
+            tools.add(LocationTool(bridge))
+            tools.add(DeviceAdminTool(bridge))
+            tools.add(MessagingTool(bridge))
         }
 
-        // Phase 3: Browse and utility tools
+        // Utility tools
         tools.add(WebContentTool(httpClient))
         tools.add(DateTimeTool())
         tools.add(CalculatorTool())
 
-        // Phase 4: Code execution
+        // Code execution
         tools.add(CodeExecutionTool())
 
         return tools
