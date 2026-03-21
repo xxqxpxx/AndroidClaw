@@ -1,8 +1,10 @@
 package com.androidclaw.app.ui.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import com.androidclaw.shared.memory.ConversationRepository
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -20,12 +22,26 @@ import com.androidclaw.app.ui.settings.UsageStatsScreen
 import org.koin.compose.koinInject
 
 @Composable
-fun AppNavigation() {
+fun AppNavigation(shortcutRoute: String? = null) {
     val navController = rememberNavController()
     val settingsManager = koinInject<SettingsManager>()
+    val conversationRepo = koinInject<ConversationRepository>()
     val onboardingCompleted by settingsManager.onboardingCompleted.collectAsState()
 
     val startDestination = if (onboardingCompleted) "conversations" else "onboarding"
+
+    // Handle shortcut intents
+    LaunchedEffect(shortcutRoute) {
+        if (shortcutRoute != null && onboardingCompleted) {
+            when (shortcutRoute) {
+                "new_conversation", "new_conversation_voice" -> {
+                    val id = conversationRepo.createConversation()
+                    navController.navigate("chat/$id")
+                }
+                "search" -> navController.navigate("search")
+            }
+        }
+    }
 
     NavHost(navController = navController, startDestination = startDestination) {
         composable("onboarding") {
