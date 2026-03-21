@@ -6,9 +6,8 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.ktor.utils.io.*
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.serialization.json.Json
 
 class ClaudeStreamingClient(
@@ -26,15 +25,12 @@ class ClaudeStreamingClient(
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
 
-    fun streamMessage(request: ClaudeRequest, authToken: String? = null, apiKey: String? = null): Flow<ClaudeStreamEvent> = flow {
+    fun streamMessage(request: ClaudeRequest, authToken: String? = null, apiKey: String? = null): Flow<ClaudeStreamEvent> = channelFlow {
         val useDirectApi = !apiKey.isNullOrBlank()
         val url = if (useDirectApi) ANTHROPIC_API_URL else "$baseUrl/api/chat"
 
         val jsonBody = json.encodeToString(ClaudeRequest.serializer(), request)
         println("$TAG: Sending request to $url, body length=${jsonBody.length}, model=${request.model}")
-
-        // Collect events into a channel so we don't lose them inside execute{}
-        val events = mutableListOf<ClaudeStreamEvent>()
 
         try {
             httpClient.preparePost(url) {
@@ -51,7 +47,7 @@ class ClaudeStreamingClient(
                 if (!response.status.isSuccess()) {
                     val errorBody = try { response.bodyAsText() } catch (_: Exception) { "unable to read body" }
                     println("$TAG: Error response: $errorBody")
-                    events.add(ClaudeStreamEvent.Error("HTTP ${response.status.value}: $errorBody"))
+                    send(ClaudeStreamEvent.Error("HTTP ${response.status.value}: $errorBody"))
                     return@execute
                 }
 
@@ -72,26 +68,20 @@ class ClaudeStreamingClient(
                         }
 
                         if (data == "[DONE]") {
-                            events.add(ClaudeStreamEvent.MessageStop)
+                            send(ClaudeStreamEvent.MessageStop)
                             break
                         }
                         val event = parseSseData(data)
                         if (event != null) {
-                            events.add(event)
+                            send(event)
                         }
                     }
                 }
-                println("$TAG: Stream finished. Lines read=$lineCount, data events=$dataLineCount, parsed events=${events.size}")
+                println("$TAG: Stream finished. Lines=$lineCount, dataEvents=$dataLineCount")
             }
         } catch (e: Exception) {
             println("$TAG: Request failed: ${e::class.simpleName}: ${e.message}")
-            events.add(ClaudeStreamEvent.Error("Request failed: ${e.message}"))
-        }
-
-        // Now emit all collected events from the proper flow context
-        println("$TAG: Emitting ${events.size} events to flow")
-        for (event in events) {
-            emit(event)
+            send(ClaudeStreamEvent.Error("Request failed: ${e.message}"))
         }
     }
 
@@ -134,7 +124,7 @@ class ClaudeStreamingClient(
                     ClaudeStreamEvent.MessageStop
                 }
                 data.contains("\"type\":\"ping\"") || data.contains("\"type\": \"ping\"") -> {
-                    null // Anthropic sends ping events - ignore them
+                    null
                 }
                 data.contains("\"type\":\"error\"") || data.contains("\"type\": \"error\"") -> {
                     val parsed = json.decodeFromString(SseError.serializer(), data)
