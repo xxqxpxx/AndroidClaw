@@ -6,6 +6,7 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.http.content.TextContent
 import io.ktor.utils.io.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
@@ -20,57 +21,77 @@ class ClaudeStreamingClient(
     }
 
     companion object {
+        private const val TAG = "AndroidClaw"
         private const val ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
 
-    /**
-     * Stream a message to Claude. If apiKey is provided, calls the Anthropic API directly.
-     * Otherwise falls back to the backend proxy at baseUrl/api/chat.
-     */
     fun streamMessage(request: ClaudeRequest, authToken: String? = null, apiKey: String? = null): Flow<ClaudeStreamEvent> = flow {
         val useDirectApi = !apiKey.isNullOrBlank()
         val url = if (useDirectApi) ANTHROPIC_API_URL else "$baseUrl/api/chat"
 
         val jsonBody = json.encodeToString(ClaudeRequest.serializer(), request)
-        println("AndroidClaw: Sending request to $url, body length=${jsonBody.length}")
+        println("$TAG: Sending request to $url, body length=${jsonBody.length}, model=${request.model}")
 
-        httpClient.preparePost(url) {
-            // Use TextContent to bypass ContentNegotiation double-serialization
-            setBody(TextContent(jsonBody, ContentType.Application.Json))
-            if (useDirectApi) {
-                header("x-api-key", apiKey)
-                header("anthropic-version", ANTHROPIC_VERSION)
-            } else {
-                authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
-            }
-        }.execute { response ->
-            println("AndroidClaw: Response status=${response.status}")
-            if (!response.status.isSuccess()) {
-                val errorBody = try { response.bodyAsText() } catch (_: Exception) { "" }
-                println("AndroidClaw: Error response body=$errorBody")
-                emit(ClaudeStreamEvent.Error("HTTP ${response.status.value}: ${response.status.description}"))
-                return@execute
-            }
+        // Collect events into a channel so we don't lose them inside execute{}
+        val events = mutableListOf<ClaudeStreamEvent>()
 
-            val channel = response.bodyAsChannel()
+        try {
+            httpClient.preparePost(url) {
+                setBody(TextContent(jsonBody, ContentType.Application.Json))
+                if (useDirectApi) {
+                    header("x-api-key", apiKey)
+                    header("anthropic-version", ANTHROPIC_VERSION)
+                } else {
+                    authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+                }
+            }.execute { response ->
+                println("$TAG: Response status=${response.status}")
 
-            while (!channel.isClosedForRead) {
-                val line = channel.readUTF8Line() ?: break
+                if (!response.status.isSuccess()) {
+                    val errorBody = try { response.bodyAsText() } catch (_: Exception) { "unable to read body" }
+                    println("$TAG: Error response: $errorBody")
+                    events.add(ClaudeStreamEvent.Error("HTTP ${response.status.value}: $errorBody"))
+                    return@execute
+                }
 
-                if (line.startsWith("data: ")) {
-                    val data = line.removePrefix("data: ").trim()
-                    if (data == "[DONE]") {
-                        emit(ClaudeStreamEvent.MessageStop)
-                        break
-                    }
-                    val event = parseSseData(data)
-                    if (event != null) {
-                        emit(event)
+                val channel = response.bodyAsChannel()
+                var lineCount = 0
+                var dataLineCount = 0
+
+                while (!channel.isClosedForRead) {
+                    val line = channel.readUTF8Line() ?: break
+                    lineCount++
+
+                    if (line.startsWith("data: ")) {
+                        val data = line.removePrefix("data: ").trim()
+                        dataLineCount++
+
+                        if (dataLineCount <= 3) {
+                            println("$TAG: SSE data #$dataLineCount: ${data.take(200)}")
+                        }
+
+                        if (data == "[DONE]") {
+                            events.add(ClaudeStreamEvent.MessageStop)
+                            break
+                        }
+                        val event = parseSseData(data)
+                        if (event != null) {
+                            events.add(event)
+                        }
                     }
                 }
+                println("$TAG: Stream finished. Lines read=$lineCount, data events=$dataLineCount, parsed events=${events.size}")
             }
-            println("AndroidClaw: Stream completed")
+        } catch (e: Exception) {
+            println("$TAG: Request failed: ${e::class.simpleName}: ${e.message}")
+            events.add(ClaudeStreamEvent.Error("Request failed: ${e.message}"))
+        }
+
+        // Now emit all collected events from the proper flow context
+        println("$TAG: Emitting ${events.size} events to flow")
+        for (event in events) {
+            emit(event)
         }
     }
 
@@ -112,13 +133,20 @@ class ClaudeStreamingClient(
                 data.contains("\"type\":\"message_stop\"") || data.contains("\"type\": \"message_stop\"") -> {
                     ClaudeStreamEvent.MessageStop
                 }
+                data.contains("\"type\":\"ping\"") || data.contains("\"type\": \"ping\"") -> {
+                    null // Anthropic sends ping events - ignore them
+                }
                 data.contains("\"type\":\"error\"") || data.contains("\"type\": \"error\"") -> {
                     val parsed = json.decodeFromString(SseError.serializer(), data)
                     ClaudeStreamEvent.Error(parsed.error.message)
                 }
-                else -> null
+                else -> {
+                    println("$TAG: Unknown SSE event type: ${data.take(100)}")
+                    null
+                }
             }
         } catch (e: Exception) {
+            println("$TAG: Parse error for data: ${data.take(200)}, error: ${e.message}")
             ClaudeStreamEvent.Error("Parse error: ${e.message}")
         }
     }

@@ -76,22 +76,26 @@ class ChatViewModel(
 
             try {
                 val currentApiKey = apiKeyProvider().takeIf { it.isNotBlank() }
+                println("AndroidClaw.Chat: Sending message, apiKey=${if (currentApiKey != null) "set(${currentApiKey.length}chars)" else "null"}")
                 agentLoop.run(conversationId, text, apiKey = currentApiKey).collect { event ->
                     when (event) {
                         is AgentEvent.TextDelta -> {
                             _streamingText.value += event.text
                         }
                         is AgentEvent.ToolCallStart -> {
+                            println("AndroidClaw.Chat: Tool call: ${event.toolName}")
                             _activeToolName.value = event.toolName
                         }
                         is AgentEvent.ToolCallComplete -> {
                             _activeToolName.value = null
                         }
                         is AgentEvent.MessageComplete -> {
+                            println("AndroidClaw.Chat: Message complete, length=${event.fullText.length}")
                             _streamingText.value = ""
                             lastFailedMessage = null
                         }
                         is AgentEvent.Error -> {
+                            println("AndroidClaw.Chat: Error: ${event.throwable.message}")
                             handleError(text, event.throwable, attempt)
                         }
                     }

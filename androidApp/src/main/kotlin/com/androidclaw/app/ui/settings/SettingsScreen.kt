@@ -10,9 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.androidclaw.app.admin.DeviceAdminManager
 import com.androidclaw.app.settings.SettingsManager
 import com.androidclaw.app.settings.ThemeMode
 import org.koin.compose.koinInject
@@ -26,10 +28,13 @@ fun SettingsScreen(
     onNavigateToStats: () -> Unit = {}
 ) {
     val settings = koinInject<SettingsManager>()
+    val deviceAdminManager = koinInject<DeviceAdminManager>()
+    val context = LocalContext.current
 
     var serverUrl by remember { mutableStateOf(settings.serverUrl.value) }
     var apiKey by remember { mutableStateOf(settings.apiKey.value) }
     var showApiKey by remember { mutableStateOf(false) }
+    var isDeviceAdmin by remember { mutableStateOf(deviceAdminManager.isAdminActive) }
     val selectedModel by settings.model.collectAsState()
     val themeMode by settings.themeMode.collectAsState()
     val dynamicColors by settings.dynamicColors.collectAsState()
@@ -237,10 +242,36 @@ fun SettingsScreen(
                 )
             }
 
+            // Device Admin section
+            item { SectionHeader("Device Control") }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("Device Admin") },
+                    supportingContent = {
+                        Text(
+                            if (isDeviceAdmin) "Active - AndroidClaw can lock screen, manage security"
+                            else "Enable to allow screen lock, security management"
+                        )
+                    },
+                    trailingContent = {
+                        if (isDeviceAdmin) {
+                            Text("Active", color = MaterialTheme.colorScheme.primary)
+                        } else {
+                            Button(onClick = {
+                                context.startActivity(deviceAdminManager.requestAdminActivation())
+                            }) {
+                                Text("Enable")
+                            }
+                        }
+                    }
+                )
+            }
+
             item {
                 Spacer(Modifier.height(32.dp))
                 Text(
-                    "AndroidClaw v0.4.0",
+                    "AndroidClaw v0.5.0",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(bottom = 16.dp)

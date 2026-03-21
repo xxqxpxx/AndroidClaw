@@ -27,6 +27,8 @@ class AgentLoop(
     private val toolMap = tools.associateBy { it.name }
 
     fun run(conversationId: String, userMessage: String, authToken: String? = null, apiKey: String? = null): Flow<AgentEvent> = flow {
+        println("AndroidClaw.Agent: Starting run for conversation=$conversationId, message=${userMessage.take(50)}")
+
         // Save user message
         conversationRepo.addMessage(conversationId, MessageRole.USER, userMessage)
 
@@ -37,9 +39,11 @@ class AgentLoop(
         val messages = buildMessageHistory(conversationId)
         var currentMessages = messages.toMutableList()
         var iterations = 0
+        println("AndroidClaw.Agent: Message history size=${currentMessages.size}, model=${config.model}")
 
         while (iterations < config.maxToolIterations) {
             iterations++
+            println("AndroidClaw.Agent: Iteration $iterations")
 
             val request = ClaudeRequest(
                 model = config.model,
@@ -54,14 +58,20 @@ class AgentLoop(
             val toolCalls = mutableListOf<PendingToolCall>()
             var currentToolCall: PendingToolCall? = null
             var stopReason: String? = null
+            var eventCount = 0
 
             client.streamMessage(request, authToken, apiKey).collect { event ->
+                eventCount++
+                if (eventCount <= 5) {
+                    println("AndroidClaw.Agent: Event #$eventCount: ${event::class.simpleName}")
+                }
                 when (event) {
                     is ClaudeStreamEvent.TextDelta -> {
                         textBuilder.append(event.text)
                         emit(AgentEvent.TextDelta(event.text))
                     }
                     is ClaudeStreamEvent.ToolUseStart -> {
+                        println("AndroidClaw.Agent: Tool call started: ${event.name}")
                         currentToolCall = PendingToolCall(event.id, event.name, StringBuilder())
                         emit(AgentEvent.ToolCallStart(event.name, event.id))
                     }
@@ -76,13 +86,16 @@ class AgentLoop(
                     }
                     is ClaudeStreamEvent.MessageDelta -> {
                         stopReason = event.stopReason
+                        println("AndroidClaw.Agent: MessageDelta stopReason=$stopReason")
                     }
                     is ClaudeStreamEvent.Error -> {
+                        println("AndroidClaw.Agent: Error event: ${event.message}")
                         emit(AgentEvent.Error(RuntimeException(event.message)))
                     }
                     else -> {}
                 }
             }
+            println("AndroidClaw.Agent: Stream collection done. Events=$eventCount, textLen=${textBuilder.length}, toolCalls=${toolCalls.size}, stopReason=$stopReason")
 
             if (stopReason == "tool_use" && toolCalls.isNotEmpty()) {
                 // Build assistant message with text + tool_use blocks
