@@ -20,7 +20,8 @@ enum class VoicePipelineState {
 class VoicePipeline(
     private val context: Context,
     private val agentLoop: AgentLoop,
-    private val conversationRepo: ConversationRepository
+    private val conversationRepo: ConversationRepository,
+    private val apiKeyProvider: () -> String = { "" }
 ) {
     private val _state = MutableStateFlow(VoicePipelineState.IDLE)
     val state: StateFlow<VoicePipelineState> = _state.asStateFlow()
@@ -125,7 +126,8 @@ class VoicePipeline(
         _state.value = VoicePipelineState.THINKING
         val responseBuilder = StringBuilder()
 
-        agentLoop.run(conversationId, text).collect { event ->
+        val currentApiKey = apiKeyProvider().takeIf { it.isNotBlank() }
+        agentLoop.run(conversationId, text, apiKey = currentApiKey).collect { event ->
             when (event) {
                 is AgentEvent.TextDelta -> responseBuilder.append(event.text)
                 is AgentEvent.MessageComplete -> {

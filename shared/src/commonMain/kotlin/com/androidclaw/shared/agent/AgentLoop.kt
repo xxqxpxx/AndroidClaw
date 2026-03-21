@@ -26,7 +26,7 @@ class AgentLoop(
     private val json = Json { ignoreUnknownKeys = true }
     private val toolMap = tools.associateBy { it.name }
 
-    fun run(conversationId: String, userMessage: String, authToken: String? = null): Flow<AgentEvent> = flow {
+    fun run(conversationId: String, userMessage: String, authToken: String? = null, apiKey: String? = null): Flow<AgentEvent> = flow {
         // Save user message
         conversationRepo.addMessage(conversationId, MessageRole.USER, userMessage)
 
@@ -55,7 +55,7 @@ class AgentLoop(
             var currentToolCall: PendingToolCall? = null
             var stopReason: String? = null
 
-            client.streamMessage(request, authToken).collect { event ->
+            client.streamMessage(request, authToken, apiKey).collect { event ->
                 when (event) {
                     is ClaudeStreamEvent.TextDelta -> {
                         textBuilder.append(event.text)

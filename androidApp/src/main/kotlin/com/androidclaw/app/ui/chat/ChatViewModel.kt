@@ -15,7 +15,8 @@ import kotlinx.coroutines.launch
 class ChatViewModel(
     private val agentLoop: AgentLoop,
     private val conversationRepo: ConversationRepository,
-    val conversationId: String
+    val conversationId: String,
+    private val apiKeyProvider: () -> String = { "" }
 ) : ViewModel() {
 
     val messages: StateFlow<List<MessageUiModel>> = conversationRepo
@@ -74,7 +75,8 @@ class ChatViewModel(
             _activeToolName.value = null
 
             try {
-                agentLoop.run(conversationId, text).collect { event ->
+                val currentApiKey = apiKeyProvider().takeIf { it.isNotBlank() }
+                agentLoop.run(conversationId, text, apiKey = currentApiKey).collect { event ->
                     when (event) {
                         is AgentEvent.TextDelta -> {
                             _streamingText.value += event.text
@@ -122,10 +124,13 @@ class ChatViewModel(
         } else {
             lastFailedMessage = text
             val friendlyMessage = when {
-                isNetworkError -> "Unable to connect to the server. Check your internet connection."
-                error.message?.contains("401") == true -> "Authentication expired. Please restart the app."
+                isNetworkError && apiKeyProvider().isBlank() ->
+                    "No API key set. Go to Settings and enter your Anthropic API key."
+                isNetworkError -> "Unable to connect. Check your internet connection and API key."
+                error.message?.contains("401") == true -> "Invalid API key. Check your key in Settings."
                 error.message?.contains("429") == true -> "Too many requests. Please wait a moment."
-                error.message?.contains("500") == true -> "Server error. Please try again."
+                error.message?.contains("500") == true || error.message?.contains("529") == true ->
+                    "Claude is overloaded. Please try again."
                 else -> "Something went wrong: ${error.message}"
             }
             _errorMessage.value = friendlyMessage

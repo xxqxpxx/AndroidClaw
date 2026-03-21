@@ -10,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.androidclaw.app.settings.SettingsManager
 import com.androidclaw.app.settings.ThemeMode
@@ -26,6 +28,8 @@ fun SettingsScreen(
     val settings = koinInject<SettingsManager>()
 
     var serverUrl by remember { mutableStateOf(settings.serverUrl.value) }
+    var apiKey by remember { mutableStateOf(settings.apiKey.value) }
+    var showApiKey by remember { mutableStateOf(false) }
     val selectedModel by settings.model.collectAsState()
     val themeMode by settings.themeMode.collectAsState()
     val dynamicColors by settings.dynamicColors.collectAsState()
@@ -57,11 +61,38 @@ fun SettingsScreen(
 
             item {
                 OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it; settings.setApiKey(it) },
+                    label = { Text("Anthropic API Key") },
+                    placeholder = { Text("sk-ant-...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        TextButton(onClick = { showApiKey = !showApiKey }) {
+                            Text(if (showApiKey) "Hide" else "Show")
+                        }
+                    },
+                    supportingText = {
+                        if (apiKey.isBlank()) {
+                            Text("Required. Get your key from console.anthropic.com")
+                        } else {
+                            Text("Direct API mode active")
+                        }
+                    }
+                )
+            }
+
+            item {
+                OutlinedTextField(
                     value = serverUrl,
                     onValueChange = { serverUrl = it; settings.setServerUrl(it) },
-                    label = { Text("Backend Server URL") },
+                    label = { Text("Backend Server URL (optional)") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    supportingText = {
+                        Text("Only needed if using a proxy server instead of direct API")
+                    }
                 )
             }
 

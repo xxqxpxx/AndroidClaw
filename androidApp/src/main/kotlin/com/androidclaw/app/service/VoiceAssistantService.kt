@@ -19,6 +19,7 @@ class VoiceAssistantService : Service() {
 
     private val agentLoop: AgentLoop by inject()
     private val conversationRepo: ConversationRepository by inject()
+    private val settings: com.androidclaw.app.settings.SettingsManager by inject()
     private var voicePipeline: VoicePipeline? = null
     private var stateObserverJob: kotlinx.coroutines.Job? = null
     private val serviceScope = kotlinx.coroutines.CoroutineScope(
@@ -36,7 +37,7 @@ class VoiceAssistantService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        voicePipeline = VoicePipeline(this, agentLoop, conversationRepo)
+        voicePipeline = VoicePipeline(this, agentLoop, conversationRepo, apiKeyProvider = { settings.apiKey.value })
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

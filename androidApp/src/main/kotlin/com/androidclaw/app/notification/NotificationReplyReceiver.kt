@@ -28,6 +28,7 @@ class NotificationReplyReceiver : BroadcastReceiver(), KoinComponent {
 
     private val agentLoop: AgentLoop by inject()
     private val conversationRepo: ConversationRepository by inject()
+    private val settings: com.androidclaw.app.settings.SettingsManager by inject()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
@@ -110,7 +111,8 @@ class NotificationReplyReceiver : BroadcastReceiver(), KoinComponent {
         scope.launch {
             val responseBuilder = StringBuilder()
             try {
-                agentLoop.run(conversationId, replyText).collect { event ->
+                val apiKey = settings.apiKey.value.takeIf { it.isNotBlank() }
+                agentLoop.run(conversationId, replyText, apiKey = apiKey).collect { event ->
                     when (event) {
                         is AgentEvent.TextDelta -> responseBuilder.append(event.text)
                         is AgentEvent.MessageComplete -> {}

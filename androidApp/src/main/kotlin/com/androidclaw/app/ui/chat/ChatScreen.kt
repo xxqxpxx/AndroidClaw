@@ -47,14 +47,15 @@ fun ChatScreen(
     // In a real app, inject via Koin ViewModelFactory
     val agentLoop = koinInject<com.androidclaw.shared.agent.AgentLoop>()
     val conversationRepo = koinInject<com.androidclaw.shared.memory.ConversationRepository>()
+    val settings = koinInject<com.androidclaw.app.settings.SettingsManager>()
     val context = LocalContext.current
 
     val viewModel = remember {
-        ChatViewModel(agentLoop, conversationRepo, conversationId)
+        ChatViewModel(agentLoop, conversationRepo, conversationId, apiKeyProvider = { settings.apiKey.value })
     }
 
     val voicePipeline = remember {
-        VoicePipeline(context, agentLoop, conversationRepo)
+        VoicePipeline(context, agentLoop, conversationRepo, apiKeyProvider = { settings.apiKey.value })
     }
 
     val messages by viewModel.messages.collectAsState()

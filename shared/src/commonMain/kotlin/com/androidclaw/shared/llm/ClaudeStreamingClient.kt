@@ -18,11 +18,28 @@ class ClaudeStreamingClient(
         isLenient = true
     }
 
-    fun streamMessage(request: ClaudeRequest, authToken: String? = null): Flow<ClaudeStreamEvent> = flow {
-        val response = httpClient.preparePost("$baseUrl/api/chat") {
+    companion object {
+        private const val ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
+        private const val ANTHROPIC_VERSION = "2023-06-01"
+    }
+
+    /**
+     * Stream a message to Claude. If apiKey is provided, calls the Anthropic API directly.
+     * Otherwise falls back to the backend proxy at baseUrl/api/chat.
+     */
+    fun streamMessage(request: ClaudeRequest, authToken: String? = null, apiKey: String? = null): Flow<ClaudeStreamEvent> = flow {
+        val useDirectApi = !apiKey.isNullOrBlank()
+        val url = if (useDirectApi) ANTHROPIC_API_URL else "$baseUrl/api/chat"
+
+        val response = httpClient.preparePost(url) {
             contentType(ContentType.Application.Json)
             setBody(json.encodeToString(ClaudeRequest.serializer(), request))
-            authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            if (useDirectApi) {
+                header("x-api-key", apiKey)
+                header("anthropic-version", ANTHROPIC_VERSION)
+            } else {
+                authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+            }
             header(HttpHeaders.Accept, "text/event-stream")
         }.execute { response ->
             if (!response.status.isSuccess()) {

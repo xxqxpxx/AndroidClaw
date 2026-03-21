@@ -65,7 +65,7 @@ class SettingsManager(context: Context) {
     fun setCustomSystemPrompt(prompt: String) { _customSystemPrompt.value = prompt; prefs.edit().putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt).apply() }
 
     val isConfigured: Boolean
-        get() = _serverUrl.value.isNotBlank()
+        get() = _apiKey.value.isNotBlank() || _serverUrl.value.isNotBlank()
 
     companion object {
         const val KEY_SERVER_URL = "server_url"
