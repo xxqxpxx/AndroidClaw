@@ -20,6 +20,10 @@ class AudioRecorder(private val context: Context) {
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         const val FRAME_SIZE = 512 // samples per frame
+
+        fun shortsToFloats(shorts: ShortArray): FloatArray {
+            return FloatArray(shorts.size) { shorts[it] / 32768f }
+        }
     }
 
     private var audioRecord: AudioRecord? = null
@@ -62,14 +66,16 @@ class AudioRecorder(private val context: Context) {
     }.flowOn(Dispatchers.IO)
 
     fun stop() {
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-    }
-
-    companion object ShortArrayUtils {
-        fun shortsToFloats(shorts: ShortArray): FloatArray {
-            return FloatArray(shorts.size) { shorts[it] / 32768f }
+        try {
+            val recorder = audioRecord
+            if (recorder != null && recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                recorder.stop()
+            }
+            recorder?.release()
+        } catch (_: IllegalStateException) {
+            // Already stopped or not initialized
+        } finally {
+            audioRecord = null
         }
     }
 }

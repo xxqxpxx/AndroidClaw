@@ -24,3 +24,16 @@ actual fun createHttpClient(): HttpClient {
         }
     }
 }
+
+actual fun createStreamingHttpClient(): HttpClient {
+    return HttpClient(OkHttp) {
+        // No ContentNegotiation - we handle raw SSE bytes manually
+        engine {
+            config {
+                retryOnConnectionFailure(true)
+                callTimeout(0, java.util.concurrent.TimeUnit.SECONDS) // No call timeout for SSE
+                readTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+            }
+        }
+    }
+}

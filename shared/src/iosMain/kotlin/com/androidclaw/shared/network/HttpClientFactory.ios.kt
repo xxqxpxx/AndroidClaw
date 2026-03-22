@@ -23,3 +23,15 @@ actual fun createHttpClient(): HttpClient {
         }
     }
 }
+
+actual fun createStreamingHttpClient(): HttpClient {
+    return HttpClient(Darwin) {
+        // No ContentNegotiation - we handle raw SSE bytes manually
+        engine {
+            configureRequest {
+                setAllowsCellularAccess(true)
+                setTimeoutInterval(120.0)
+            }
+        }
+    }
+}

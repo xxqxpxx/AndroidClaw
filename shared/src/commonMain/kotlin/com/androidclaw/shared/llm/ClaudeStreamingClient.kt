@@ -35,6 +35,7 @@ class ClaudeStreamingClient(
         try {
             httpClient.preparePost(url) {
                 setBody(TextContent(jsonBody, ContentType.Application.Json))
+                header(HttpHeaders.Accept, "text/event-stream")
                 if (useDirectApi) {
                     header("x-api-key", apiKey)
                     header("anthropic-version", ANTHROPIC_VERSION)
@@ -54,29 +55,65 @@ class ClaudeStreamingClient(
                 val channel = response.bodyAsChannel()
                 var lineCount = 0
                 var dataLineCount = 0
+                val lineBuffer = StringBuilder()
+                val readBuffer = ByteArray(8192)
 
                 while (!channel.isClosedForRead) {
-                    val line = channel.readUTF8Line() ?: break
-                    lineCount++
+                    val bytesRead = channel.readAvailable(readBuffer)
+                    if (bytesRead == -1) break
+                    if (bytesRead == 0) continue
 
-                    if (line.startsWith("data: ")) {
-                        val data = line.removePrefix("data: ").trim()
-                        dataLineCount++
+                    val chunk = readBuffer.decodeToString(0, 0 + bytesRead)
+                    lineBuffer.append(chunk)
 
-                        if (dataLineCount <= 3) {
-                            println("$TAG: SSE data #$dataLineCount: ${data.take(200)}")
-                        }
+                    // Process complete lines from buffer
+                    while (true) {
+                        val newlineIdx = lineBuffer.indexOf('\n')
+                        if (newlineIdx == -1) break
 
-                        if (data == "[DONE]") {
-                            send(ClaudeStreamEvent.MessageStop)
-                            break
-                        }
-                        val event = parseSseData(data)
-                        if (event != null) {
-                            send(event)
+                        val line = lineBuffer.substring(0, newlineIdx).trimEnd('\r')
+                        lineBuffer.delete(0, newlineIdx + 1)
+
+                        if (line.isBlank()) continue
+                        lineCount++
+
+                        if (line.startsWith("data: ")) {
+                            val data = line.removePrefix("data: ").trim()
+                            dataLineCount++
+
+                            if (dataLineCount <= 3) {
+                                println("$TAG: SSE data #$dataLineCount: ${data.take(200)}")
+                            }
+
+                            if (data == "[DONE]") {
+                                send(ClaudeStreamEvent.MessageStop)
+                                break
+                            }
+                            val event = parseSseData(data)
+                            if (event != null) {
+                                send(event)
+                            }
                         }
                     }
                 }
+
+                // Process any remaining data in buffer
+                if (lineBuffer.isNotBlank()) {
+                    for (remaining in lineBuffer.toString().split('\n')) {
+                        val line = remaining.trim()
+                        if (line.startsWith("data: ")) {
+                            val data = line.removePrefix("data: ").trim()
+                            dataLineCount++
+                            if (data != "[DONE]") {
+                                val event = parseSseData(data)
+                                if (event != null) {
+                                    send(event)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 println("$TAG: Stream finished. Lines=$lineCount, dataEvents=$dataLineCount")
             }
         } catch (e: Exception) {
