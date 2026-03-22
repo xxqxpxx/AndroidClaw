@@ -82,6 +82,7 @@
     <application
         android:name=".AndroidClawApp"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:label="AndroidClaw"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"

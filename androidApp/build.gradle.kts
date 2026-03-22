@@ -2,6 +2,7 @@ import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
+    alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinMultiplatform)
 }
@@ -24,6 +25,11 @@ kotlin {
         androidMain.dependencies {
             implementation(project(":shared"))
 
+            implementation(compose.runtime)
+            implementation(compose.foundation)
+            implementation(compose.material3)
+            implementation(compose.materialIconsExtended)
+
             implementation(libs.activity.compose)
             implementation(libs.navigation.compose)
             implementation(libs.lifecycle.viewmodel.compose)
@@ -31,6 +37,8 @@ kotlin {
 
             implementation(libs.koin.android)
             implementation(libs.koin.compose)
+
+            implementation(libs.kotlinx.datetime)
 
             implementation(libs.porcupine.android)
             implementation(libs.onnxruntime.android)

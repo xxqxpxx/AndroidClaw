@@ -31,3 +31,9 @@ out/
 # Environment
 .env
 *.ppn
+
+# Kotlin build cache
+.kotlin/
+
+# Generated duplicate source sets
+androidApp/src/androidMain/
