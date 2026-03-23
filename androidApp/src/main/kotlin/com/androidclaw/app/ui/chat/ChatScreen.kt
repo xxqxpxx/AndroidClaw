@@ -6,6 +6,10 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import com.androidclaw.app.audio.SoundEffect
+import com.androidclaw.app.audio.SoundManager
+import com.androidclaw.app.ui.components.CatMascot
+import com.androidclaw.app.ui.components.CatState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -51,7 +55,19 @@ fun ChatScreen(
     val context = LocalContext.current
 
     val viewModel = remember {
-        ChatViewModel(agentLoop, conversationRepo, conversationId, apiKeyProvider = { settings.apiKey.value })
+        ChatViewModel(
+            agentLoop, conversationRepo, conversationId,
+            apiKeyProvider = { settings.apiKey.value },
+            llmConfigProvider = {
+                LlmConfig(
+                    provider = settings.llmProvider.value,
+                    onDeviceModel = settings.onDeviceModel.value,
+                    localUrl = settings.localLlmUrl.value,
+                    localModel = settings.localLlmModel.value,
+                    localApiKey = settings.localLlmApiKey.value
+                )
+            }
+        )
     }
 
     val voicePipeline = remember {
@@ -67,6 +83,37 @@ fun ChatScreen(
     val voiceState by voicePipeline.state.collectAsState()
     val lastTranscription by voicePipeline.lastTranscription.collectAsState()
     val isVoiceActive = voiceState != VoicePipelineState.IDLE && voiceState != VoicePipelineState.ERROR
+
+    val soundManager = koinInject<SoundManager>()
+
+    // Cat mascot state — driven by chat state
+    val catState by remember(isLoading, activeToolName) {
+        derivedStateOf {
+            when {
+                activeToolName != null -> CatState.RUNNING    // Executing a tool
+                isLoading -> CatState.WALKING                 // Thinking
+                else -> CatState.IDLE                         // Waiting
+            }
+        }
+    }
+
+    // Track previous loading state for sound effects
+    var wasLoading by remember { mutableStateOf(false) }
+    LaunchedEffect(isLoading) {
+        if (wasLoading && !isLoading && errorMessage == null) {
+            soundManager.play(SoundEffect.TASK_DONE)
+        }
+        wasLoading = isLoading
+    }
+
+    // Play sound when tool completes
+    var lastToolName by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeToolName) {
+        if (lastToolName != null && activeToolName == null) {
+            soundManager.play(SoundEffect.TOOL_COMPLETE, 0.3f)
+        }
+        lastToolName = activeToolName
+    }
 
     var inputText by remember { mutableStateOf("") }
     var pendingImage by remember { mutableStateOf<ImageAttachment.ProcessedImage?>(null) }
@@ -211,10 +258,34 @@ fun ChatScreen(
                     }
                 }
 
-                // Show tool call indicator
+                // Show tool call indicator with cat mascot
                 if (activeToolName != null) {
                     item("tool_call") {
-                        ToolCallIndicator(toolName = activeToolName!!)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CatMascot(state = catState, size = 64)
+                            ToolCallIndicator(toolName = activeToolName!!)
+                        }
+                    }
+                }
+
+                // Cat mascot while thinking (no tool active)
+                if (isLoading && activeToolName == null && streamingText.isBlank()) {
+                    item("cat_thinking") {
+                        Row(
+                            modifier = Modifier.padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CatMascot(state = CatState.WALKING, size = 64)
+                            Text(
+                                "Thinking...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -299,6 +370,7 @@ fun ChatScreen(
                                 val imageContext = pendingImage?.let { img ->
                                     "[Image attached: ${img.width}x${img.height}] "
                                 } ?: ""
+                                soundManager.play(SoundEffect.SEND, 0.3f)
                                 viewModel.sendMessage(imageContext + inputText)
                                 inputText = ""
                                 pendingImage = null

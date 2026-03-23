@@ -2,4 +2,5 @@
 <resources>
     <string name="app_name">AndroidClaw</string>
     <string name="widget_description">Quick access to AndroidClaw AI assistant</string>
+    <string name="accessibility_service_description">AndroidClaw uses this service to automatically send messages in messaging apps like WhatsApp, Telegram, and Signal when you ask it to.</string>
 </resources>

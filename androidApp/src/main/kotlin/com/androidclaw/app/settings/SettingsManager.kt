@@ -50,6 +50,27 @@ class SettingsManager(context: Context) {
     private val _maxContextTokens = MutableStateFlow(prefs.getInt(KEY_MAX_CONTEXT_TOKENS, DEFAULT_MAX_CONTEXT_TOKENS))
     val maxContextTokens: StateFlow<Int> = _maxContextTokens.asStateFlow()
 
+    // LLM Provider: "claude", "on_device", "custom_server"
+    // claude = Anthropic cloud API
+    // on_device = local on-phone inference (privacy-first, no internet needed)
+    // custom_server = OpenAI-compatible endpoint on PC/network (pro feature)
+    private val _llmProvider = MutableStateFlow(prefs.getString(KEY_LLM_PROVIDER, "claude") ?: "claude")
+    val llmProvider: StateFlow<String> = _llmProvider.asStateFlow()
+
+    // On-device model name (for on_device provider)
+    private val _onDeviceModel = MutableStateFlow(prefs.getString(KEY_ON_DEVICE_MODEL, DEFAULT_ON_DEVICE_MODEL) ?: DEFAULT_ON_DEVICE_MODEL)
+    val onDeviceModel: StateFlow<String> = _onDeviceModel.asStateFlow()
+
+    // Custom server settings (pro: Ollama, LM Studio, llama.cpp, vLLM, etc.)
+    private val _localLlmUrl = MutableStateFlow(prefs.getString(KEY_LOCAL_LLM_URL, DEFAULT_LOCAL_LLM_URL) ?: DEFAULT_LOCAL_LLM_URL)
+    val localLlmUrl: StateFlow<String> = _localLlmUrl.asStateFlow()
+
+    private val _localLlmModel = MutableStateFlow(prefs.getString(KEY_LOCAL_LLM_MODEL, DEFAULT_LOCAL_LLM_MODEL) ?: DEFAULT_LOCAL_LLM_MODEL)
+    val localLlmModel: StateFlow<String> = _localLlmModel.asStateFlow()
+
+    private val _localLlmApiKey = MutableStateFlow(prefs.getString(KEY_LOCAL_LLM_API_KEY, "") ?: "")
+    val localLlmApiKey: StateFlow<String> = _localLlmApiKey.asStateFlow()
+
     private val _customSystemPrompt = MutableStateFlow(
         prefs.getString(KEY_CUSTOM_SYSTEM_PROMPT, com.androidclaw.shared.llm.ClaudeModels.DEFAULT_SYSTEM_PROMPT)
             ?: com.androidclaw.shared.llm.ClaudeModels.DEFAULT_SYSTEM_PROMPT
@@ -67,6 +88,11 @@ class SettingsManager(context: Context) {
     fun setOnboardingCompleted(completed: Boolean) { _onboardingCompleted.value = completed; prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply() }
     fun setMaxContextTokens(tokens: Int) { _maxContextTokens.value = tokens; prefs.edit().putInt(KEY_MAX_CONTEXT_TOKENS, tokens).apply() }
     fun setCustomSystemPrompt(prompt: String) { _customSystemPrompt.value = prompt; prefs.edit().putString(KEY_CUSTOM_SYSTEM_PROMPT, prompt).apply() }
+    fun setLlmProvider(provider: String) { _llmProvider.value = provider; prefs.edit().putString(KEY_LLM_PROVIDER, provider).apply() }
+    fun setOnDeviceModel(model: String) { _onDeviceModel.value = model; prefs.edit().putString(KEY_ON_DEVICE_MODEL, model).apply() }
+    fun setLocalLlmUrl(url: String) { _localLlmUrl.value = url; prefs.edit().putString(KEY_LOCAL_LLM_URL, url).apply() }
+    fun setLocalLlmModel(model: String) { _localLlmModel.value = model; prefs.edit().putString(KEY_LOCAL_LLM_MODEL, model).apply() }
+    fun setLocalLlmApiKey(key: String) { _localLlmApiKey.value = key; prefs.edit().putString(KEY_LOCAL_LLM_API_KEY, key).apply() }
 
     val isConfigured: Boolean
         get() = _apiKey.value.isNotBlank() || _serverUrl.value.isNotBlank()
@@ -84,8 +110,17 @@ class SettingsManager(context: Context) {
         const val KEY_MAX_CONTEXT_TOKENS = "max_context_tokens"
         const val KEY_CUSTOM_SYSTEM_PROMPT = "custom_system_prompt"
 
+        const val KEY_LLM_PROVIDER = "llm_provider"
+        const val KEY_ON_DEVICE_MODEL = "on_device_model"
+        const val KEY_LOCAL_LLM_URL = "local_llm_url"
+        const val KEY_LOCAL_LLM_MODEL = "local_llm_model"
+        const val KEY_LOCAL_LLM_API_KEY = "local_llm_api_key"
+
         const val DEFAULT_SERVER_URL = "http://10.0.2.2:8080"
         const val DEFAULT_MODEL = "claude-sonnet-4-20250514"
+        const val DEFAULT_ON_DEVICE_MODEL = "gemma-2b-it-gpu"  // MediaPipe model
+        const val DEFAULT_LOCAL_LLM_URL = "http://localhost:11434"  // Ollama default
+        const val DEFAULT_LOCAL_LLM_MODEL = "llama3.2"
         const val DEFAULT_MAX_CONTEXT_TOKENS = 100000
     }
 }

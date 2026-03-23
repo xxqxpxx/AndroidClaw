@@ -36,6 +36,9 @@ fun SettingsScreen(
     var showApiKey by remember { mutableStateOf(false) }
     var isDeviceAdmin by remember { mutableStateOf(deviceAdminManager.isAdminActive) }
     val selectedModel by settings.model.collectAsState()
+    val llmProvider by settings.llmProvider.collectAsState()
+    var localLlmUrl by remember { mutableStateOf(settings.localLlmUrl.value) }
+    var localLlmModel by remember { mutableStateOf(settings.localLlmModel.value) }
     val themeMode by settings.themeMode.collectAsState()
     val dynamicColors by settings.dynamicColors.collectAsState()
     val voiceEnabled by settings.voiceEnabled.collectAsState()
@@ -61,76 +64,135 @@ fun SettingsScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Connection section
-            item { SectionHeader("Connection") }
-
-            item {
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it; settings.setApiKey(it) },
-                    label = { Text("Anthropic API Key") },
-                    placeholder = { Text("sk-ant-...") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        TextButton(onClick = { showApiKey = !showApiKey }) {
-                            Text(if (showApiKey) "Hide" else "Show")
-                        }
-                    },
-                    supportingText = {
-                        if (apiKey.isBlank()) {
-                            Text("Required. Get your key from console.anthropic.com")
-                        } else {
-                            Text("Direct API mode active")
-                        }
-                    }
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = serverUrl,
-                    onValueChange = { serverUrl = it; settings.setServerUrl(it) },
-                    label = { Text("Backend Server URL (optional)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    supportingText = {
-                        Text("Only needed if using a proxy server instead of direct API")
-                    }
-                )
-            }
-
-            // Model section
-            item { SectionHeader("AI Model") }
+            // AI Provider section
+            item { SectionHeader("AI Provider") }
 
             item {
                 var expanded by remember { mutableStateOf(false) }
-                val models = listOf(
-                    "claude-sonnet-4-20250514" to "Claude Sonnet 4 (Recommended)",
-                    "claude-haiku-4-5-20251001" to "Claude Haiku 4.5 (Faster)",
-                    "claude-3-5-haiku-20241022" to "Claude Haiku 3.5 (Legacy)"
+                val providers = listOf(
+                    "claude" to "Claude (Cloud)",
+                    "on_device" to "On-Device (Private)",
+                    "custom_server" to "Custom Server (Pro)"
                 )
                 ExposedDropdownMenuBox(
                     expanded = expanded,
                     onExpandedChange = { expanded = !expanded }
                 ) {
                     OutlinedTextField(
-                        value = models.find { it.first == selectedModel }?.second ?: selectedModel,
+                        value = providers.find { it.first == llmProvider }?.second ?: llmProvider,
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Model") },
+                        label = { Text("AI Provider") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        models.forEach { (id, label) ->
+                        providers.forEach { (id, label) ->
                             DropdownMenuItem(
                                 text = { Text(label) },
-                                onClick = { settings.setModel(id); expanded = false }
+                                onClick = { settings.setLlmProvider(id); expanded = false }
                             )
                         }
                     }
+                }
+            }
+
+            // Claude settings
+            if (llmProvider == "claude") {
+                item {
+                    OutlinedTextField(
+                        value = apiKey,
+                        onValueChange = { apiKey = it; settings.setApiKey(it) },
+                        label = { Text("Anthropic API Key") },
+                        placeholder = { Text("sk-ant-...") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (showApiKey) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            TextButton(onClick = { showApiKey = !showApiKey }) {
+                                Text(if (showApiKey) "Hide" else "Show")
+                            }
+                        },
+                        supportingText = {
+                            if (apiKey.isBlank()) Text("Required. Get from console.anthropic.com")
+                            else Text("API key set")
+                        }
+                    )
+                }
+
+                item {
+                    var expanded by remember { mutableStateOf(false) }
+                    val models = listOf(
+                        "claude-sonnet-4-20250514" to "Claude Sonnet 4 (Recommended)",
+                        "claude-haiku-4-5-20251001" to "Claude Haiku 4.5 (Faster)",
+                        "claude-3-5-haiku-20241022" to "Claude Haiku 3.5 (Legacy)"
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = expanded,
+                        onExpandedChange = { expanded = !expanded }
+                    ) {
+                        OutlinedTextField(
+                            value = models.find { it.first == selectedModel }?.second ?: selectedModel,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Model") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            models.forEach { (id, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { settings.setModel(id); expanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // On-device settings
+            if (llmProvider == "on_device") {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Gemma 2B", style = MaterialTheme.typography.titleSmall)
+                            Text("On-device AI model (~1.4 GB download)", style = MaterialTheme.typography.bodySmall)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Download the model in the Speech Recognition Models section below.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+            }
+
+            // Custom server settings
+            if (llmProvider == "custom_server") {
+                item {
+                    OutlinedTextField(
+                        value = localLlmUrl,
+                        onValueChange = { localLlmUrl = it; settings.setLocalLlmUrl(it) },
+                        label = { Text("Server URL") },
+                        placeholder = { Text("http://192.168.1.100:11434") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text("Ollama: 11434 | LM Studio: 1234 | llama.cpp: 8080") }
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = localLlmModel,
+                        onValueChange = { localLlmModel = it; settings.setLocalLlmModel(it) },
+                        label = { Text("Model Name") },
+                        placeholder = { Text("llama3.2") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        supportingText = { Text("e.g. llama3.2, mistral, gemma2, phi3") }
+                    )
                 }
             }
 

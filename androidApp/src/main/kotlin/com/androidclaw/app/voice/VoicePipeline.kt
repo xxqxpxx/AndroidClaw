@@ -1,6 +1,9 @@
 package com.androidclaw.app.voice
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import com.androidclaw.shared.agent.AgentEvent
 import com.androidclaw.shared.agent.AgentLoop
 import com.androidclaw.shared.memory.ConversationRepository
@@ -10,8 +13,8 @@ import kotlinx.coroutines.flow.*
 enum class VoicePipelineState {
     IDLE,
     LISTENING,     // Wake word detection active
-    RECORDING,     // User speaking, VAD active
-    TRANSCRIBING,  // whisper.cpp running
+    RECORDING,     // User speaking
+    TRANSCRIBING,  // Processing speech
     THINKING,      // Claude processing
     SPEAKING,      // TTS playing response
     ERROR
@@ -32,130 +35,137 @@ class VoicePipeline(
     private val _lastResponse = MutableStateFlow("")
     val lastResponse: StateFlow<String> = _lastResponse.asStateFlow()
 
-    private val audioRecorder = AudioRecorder(context)
-    private val vadDetector = VadDetector()
-    private val whisperTranscriber = WhisperTranscriber(context)
+    private val _partialText = MutableStateFlow("")
+    val partialText: StateFlow<String> = _partialText.asStateFlow()
+
+    private val speechHelper = SpeechRecognizerHelper(context)
     private val ttsEngine = TextToSpeechEngine(context)
-    private val wakeWordDetector = WakeWordDetector(context) { onWakeWordDetected() }
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private var pipelineJob: Job? = null
     private var activeConversationId: String? = null
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    suspend fun initialize(): Boolean {
-        val whisperReady = whisperTranscriber.initialize()
-        ttsEngine.initialize {}
-        return whisperReady
-    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     fun startListening(conversationId: String? = null) {
         activeConversationId = conversationId
         _state.value = VoicePipelineState.LISTENING
-        wakeWordDetector.start()
     }
 
     fun stopListening() {
+        Log.i(TAG, "stopListening")
         pipelineJob?.cancel()
-        wakeWordDetector.stop()
-        audioRecorder.stop()
+        speechHelper.stop()
         ttsEngine.stop()
-        vadDetector.reset()
         _state.value = VoicePipelineState.IDLE
+        _partialText.value = ""
     }
 
     fun startRecordingManually() {
-        onWakeWordDetected()
-    }
+        Log.i(TAG, "startRecordingManually called")
 
-    private fun onWakeWordDetected() {
-        _state.value = VoicePipelineState.RECORDING
-        vadDetector.reset()
-
-        pipelineJob = scope.launch {
-            val audioBuffer = mutableListOf<ShortArray>()
-
-            audioRecorder.recordAudioFrames().collect { frame ->
-                val event = vadDetector.processFrame(frame)
-                when (event) {
-                    is VadEvent.SpeechStart -> {
-                        audioBuffer.clear()
-                        audioBuffer.add(frame)
-                    }
-                    is VadEvent.AudioFrame -> {
-                        audioBuffer.add(event.samples)
-                    }
-                    is VadEvent.SpeechEnd -> {
-                        audioRecorder.stop()
-                        processRecordedAudio(audioBuffer)
-                        return@collect
-                    }
-                    null -> {}
-                }
-            }
-        }
-    }
-
-    private suspend fun processRecordedAudio(audioBuffer: List<ShortArray>) {
-        _state.value = VoicePipelineState.TRANSCRIBING
-
-        // Combine and convert audio
-        val totalSamples = audioBuffer.sumOf { it.size }
-        val combined = ShortArray(totalSamples)
-        var offset = 0
-        for (chunk in audioBuffer) {
-            chunk.copyInto(combined, offset)
-            offset += chunk.size
-        }
-        val floatSamples = AudioRecorder.shortsToFloats(combined)
-
-        // Transcribe
-        val text = whisperTranscriber.transcribe(floatSamples).trim()
-        _lastTranscription.value = text
-
-        if (text.isEmpty()) {
-            _state.value = VoicePipelineState.LISTENING
-            wakeWordDetector.start()
+        if (!speechHelper.isAvailable()) {
+            Log.e(TAG, "Speech recognition not available")
+            _state.value = VoicePipelineState.ERROR
             return
         }
 
-        // Get or create conversation
+        _state.value = VoicePipelineState.RECORDING
+        _partialText.value = ""
+        _lastTranscription.value = ""
+
+        // SpeechRecognizer must be started on main thread
+        mainHandler.post {
+            speechHelper.startListening()
+        }
+
+        pipelineJob = scope.launch {
+            speechHelper.results.collect { result ->
+                when (result) {
+                    is SpeechResult.ReadyForSpeech -> {
+                        Log.i(TAG, "Ready for speech")
+                    }
+                    is SpeechResult.Partial -> {
+                        _partialText.value = result.text
+                    }
+                    is SpeechResult.EndOfSpeech -> {
+                        Log.i(TAG, "End of speech detected")
+                        _state.value = VoicePipelineState.TRANSCRIBING
+                    }
+                    is SpeechResult.Final -> {
+                        val text = result.text.trim()
+                        Log.i(TAG, "Final transcription: \"${text.take(100)}\"")
+                        _partialText.value = ""
+                        _lastTranscription.value = text
+
+                        if (text.isNotEmpty()) {
+                            processTranscription(text)
+                        } else {
+                            Log.w(TAG, "Empty transcription")
+                            _state.value = VoicePipelineState.IDLE
+                        }
+                        return@collect
+                    }
+                    is SpeechResult.Error -> {
+                        Log.e(TAG, "Speech error: ${result.message}")
+                        _partialText.value = ""
+                        _state.value = if (result.code == android.speech.SpeechRecognizer.ERROR_NO_MATCH ||
+                            result.code == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                            VoicePipelineState.IDLE
+                        } else {
+                            VoicePipelineState.ERROR
+                        }
+                        return@collect
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun processTranscription(text: String) {
         val conversationId = activeConversationId
             ?: conversationRepo.createConversation().also { activeConversationId = it }
 
-        // Send to agent
         _state.value = VoicePipelineState.THINKING
+        Log.i(TAG, "Sending to agent: \"${text.take(80)}\"")
+
         val responseBuilder = StringBuilder()
-
-        val currentApiKey = apiKeyProvider().takeIf { it.isNotBlank() }
-        agentLoop.run(conversationId, text, apiKey = currentApiKey).collect { event ->
-            when (event) {
-                is AgentEvent.TextDelta -> responseBuilder.append(event.text)
-                is AgentEvent.MessageComplete -> {
-                    _lastResponse.value = event.fullText
+        try {
+            val currentApiKey = apiKeyProvider().takeIf { it.isNotBlank() }
+            agentLoop.run(conversationId, text, apiKey = currentApiKey).collect { event ->
+                when (event) {
+                    is AgentEvent.TextDelta -> responseBuilder.append(event.text)
+                    is AgentEvent.MessageComplete -> {
+                        _lastResponse.value = event.fullText
+                    }
+                    is AgentEvent.Error -> {
+                        Log.e(TAG, "Agent error: ${event.throwable.message}")
+                        _lastResponse.value = "Sorry, something went wrong."
+                    }
+                    else -> {}
                 }
-                is AgentEvent.Error -> {
-                    _lastResponse.value = "Sorry, something went wrong."
-                }
-                else -> {}
             }
+
+            val response = responseBuilder.toString()
+            if (response.isNotEmpty()) {
+                Log.i(TAG, "Speaking response (${response.length} chars)")
+                _state.value = VoicePipelineState.SPEAKING
+                ttsEngine.speak(response)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error processing transcription", e)
         }
 
-        // Speak response
-        val response = responseBuilder.toString()
-        if (response.isNotEmpty()) {
-            _state.value = VoicePipelineState.SPEAKING
-            ttsEngine.speak(response)
-        }
-
-        // Return to listening
-        _state.value = VoicePipelineState.LISTENING
-        wakeWordDetector.start()
+        _state.value = VoicePipelineState.IDLE
     }
 
     fun release() {
         stopListening()
-        whisperTranscriber.release()
+        speechHelper.release()
         ttsEngine.release()
         scope.cancel()
+    }
+
+    companion object {
+        private const val TAG = "VoicePipeline"
     }
 }

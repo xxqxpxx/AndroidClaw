@@ -144,6 +144,19 @@
             android:name=".notification.NotificationReplyReceiver"
             android:exported="false" />
 
+        <!-- Accessibility Service for auto-sending messages -->
+        <service
+            android:name=".service.AutoSendAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
         <!-- Device Admin receiver -->
         <receiver
             android:name=".admin.ClawDeviceAdminReceiver"

@@ -5,6 +5,8 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.googleServices)
+    alias(libs.plugins.firebaseCrashlytics)
 }
 
 val localProperties = Properties().apply {
@@ -39,11 +41,19 @@ kotlin {
             implementation(libs.koin.compose)
 
             implementation(libs.kotlinx.datetime)
+            implementation(libs.kotlinx.serialization.json)
 
             implementation(libs.porcupine.android)
             implementation(libs.onnxruntime.android)
+            implementation(libs.mediapipe.genai)
         }
     }
+}
+
+dependencies {
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.crashlytics)
+    implementation(libs.firebase.analytics)
 }
 
 android {
@@ -58,6 +68,32 @@ android {
         versionName = "0.1.0"
 
         buildConfigField("String", "DEFAULT_API_KEY", "\"${localProperties.getProperty("anthropic.api.key", "")}\"")
+    }
+
+    signingConfigs {
+        create("release") {
+            val keystorePath = localProperties.getProperty("release.keystore.path", "")
+            if (keystorePath.isNotEmpty()) {
+                storeFile = file(keystorePath)
+                storePassword = localProperties.getProperty("release.keystore.password", "")
+                keyAlias = localProperties.getProperty("release.key.alias", "")
+                keyPassword = localProperties.getProperty("release.key.password", "")
+            } else {
+                // Fall back to debug keystore for local release builds
+                storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures {
@@ -82,6 +118,10 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+        // 16 KB page size compliance for Google Play (required Nov 2025+)
+        jniLibs {
+            useLegacyPackaging = false
         }
     }
 }

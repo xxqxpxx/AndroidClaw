@@ -10,8 +10,8 @@ class DeviceSettingsTool(
 
     override val name = "device_settings"
 
-    override val description = """Control device settings like Wi-Fi, Bluetooth, flashlight, brightness, and volume.
-        |Use this when the user asks to toggle settings or adjust their device.""".trimMargin()
+    override val description = """Control device settings: Wi-Fi, Bluetooth, flashlight, brightness, volume, ringer mode, screen timeout, dark mode, auto-rotate, and more.
+        |Use this when the user asks to toggle settings, adjust their device, silence their phone, or get device info.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
@@ -24,6 +24,11 @@ class DeviceSettingsTool(
                     add("bluetooth_on"); add("bluetooth_off")
                     add("flashlight_on"); add("flashlight_off")
                     add("set_brightness"); add("set_volume")
+                    add("ringer_silent"); add("ringer_vibrate"); add("ringer_normal")
+                    add("speakerphone_on"); add("speakerphone_off")
+                    add("set_screen_timeout")
+                    add("dark_mode_on"); add("dark_mode_off")
+                    add("battery_saver")
                     add("device_info")
                 }
             }
@@ -35,6 +40,10 @@ class DeviceSettingsTool(
                 put("type", "string")
                 put("description", "Audio stream for volume: media, ring, alarm, notification")
                 putJsonArray("enum") { add("media"); add("ring"); add("alarm"); add("notification") }
+            }
+            putJsonObject("seconds") {
+                put("type", "integer")
+                put("description", "Screen timeout in seconds (15, 30, 60, 120, 300, 600)")
             }
         }
         putJsonArray("required") { add("action") }
@@ -62,6 +71,19 @@ class DeviceSettingsTool(
                 val stream = input["stream"]?.jsonPrimitive?.contentOrNull ?: "media"
                 bridge.setVolume(stream, level.coerceIn(0, 100))
             }
+            "ringer_silent" -> bridge.setRingerMode("silent")
+            "ringer_vibrate" -> bridge.setRingerMode("vibrate")
+            "ringer_normal" -> bridge.setRingerMode("normal")
+            "speakerphone_on" -> bridge.setSpeakerphone(true)
+            "speakerphone_off" -> bridge.setSpeakerphone(false)
+            "set_screen_timeout" -> {
+                val seconds = input["seconds"]?.jsonPrimitive?.intOrNull
+                    ?: return ToolResult("Missing seconds for screen timeout", isError = true)
+                bridge.setScreenTimeout(seconds)
+            }
+            "dark_mode_on" -> bridge.setDarkMode(true)
+            "dark_mode_off" -> bridge.setDarkMode(false)
+            "battery_saver" -> bridge.setBatterySaver(true)
             "device_info" -> bridge.getDeviceInfo()
             else -> return ToolResult("Unknown action: $action", isError = true)
         }

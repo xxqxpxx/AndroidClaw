@@ -29,6 +29,7 @@ class ToolRegistry(
             tools.add(LocationTool(bridge))
             tools.add(DeviceAdminTool(bridge))
             tools.add(MessagingTool(bridge))
+            tools.add(SystemActionsTool(bridge))
         }
 
         // Utility tools

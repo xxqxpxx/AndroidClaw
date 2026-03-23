@@ -1,5 +1,6 @@
 package com.androidclaw.shared.llm
 
+import com.androidclaw.shared.logging.Logger
 import io.ktor.client.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
@@ -8,7 +9,10 @@ import io.ktor.http.content.TextContent
 import io.ktor.utils.io.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 class ClaudeStreamingClient(
     private val httpClient: HttpClient,
@@ -17,10 +21,11 @@ class ClaudeStreamingClient(
     private val json = Json {
         ignoreUnknownKeys = true
         isLenient = true
+        encodeDefaults = true
     }
 
     companion object {
-        private const val TAG = "AndroidClaw"
+        private const val TAG = "ClaudeClient"
         private const val ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
         private const val ANTHROPIC_VERSION = "2023-06-01"
     }
@@ -30,7 +35,7 @@ class ClaudeStreamingClient(
         val url = if (useDirectApi) ANTHROPIC_API_URL else "$baseUrl/api/chat"
 
         val jsonBody = json.encodeToString(ClaudeRequest.serializer(), request)
-        println("$TAG: Sending request to $url, body length=${jsonBody.length}, model=${request.model}")
+        Logger.i(TAG, "Sending request to $url, body length=${jsonBody.length}, model=${request.model}")
 
         try {
             httpClient.preparePost(url) {
@@ -43,37 +48,28 @@ class ClaudeStreamingClient(
                     authToken?.let { header(HttpHeaders.Authorization, "Bearer $it") }
                 }
             }.execute { response ->
-                println("$TAG: Response status=${response.status}")
+                Logger.i(TAG, "Response status=${response.status}")
 
                 if (!response.status.isSuccess()) {
                     val errorBody = try { response.bodyAsText() } catch (_: Exception) { "unable to read body" }
-                    println("$TAG: Error response: $errorBody")
+                    Logger.e(TAG, "HTTP error ${response.status.value}: $errorBody")
                     send(ClaudeStreamEvent.Error("HTTP ${response.status.value}: $errorBody"))
                     return@execute
                 }
 
-                val channel = response.bodyAsChannel()
-                var lineCount = 0
-                var dataLineCount = 0
-                val lineBuffer = StringBuilder()
-                val readBuffer = ByteArray(8192)
+                val body = response.bodyAsText()
+                Logger.d(TAG, "Response body length=${body.length}")
 
-                while (!channel.isClosedForRead) {
-                    val bytesRead = channel.readAvailable(readBuffer)
-                    if (bytesRead == -1) break
-                    if (bytesRead == 0) continue
+                // Check if this is SSE or a plain JSON response
+                if (body.trimStart().startsWith("{")) {
+                    Logger.w(TAG, "Got non-streaming JSON response, parsing directly")
+                    parseNonStreamingResponse(body)?.forEach { event -> send(event) }
+                } else {
+                    val lines = body.lines()
+                    var lineCount = 0
+                    var dataLineCount = 0
 
-                    val chunk = readBuffer.decodeToString(0, 0 + bytesRead)
-                    lineBuffer.append(chunk)
-
-                    // Process complete lines from buffer
-                    while (true) {
-                        val newlineIdx = lineBuffer.indexOf('\n')
-                        if (newlineIdx == -1) break
-
-                        val line = lineBuffer.substring(0, newlineIdx).trimEnd('\r')
-                        lineBuffer.delete(0, newlineIdx + 1)
-
+                    for (line in lines) {
                         if (line.isBlank()) continue
                         lineCount++
 
@@ -82,7 +78,7 @@ class ClaudeStreamingClient(
                             dataLineCount++
 
                             if (dataLineCount <= 3) {
-                                println("$TAG: SSE data #$dataLineCount: ${data.take(200)}")
+                                Logger.d(TAG, "SSE data #$dataLineCount: ${data.take(200)}")
                             }
 
                             if (data == "[DONE]") {
@@ -95,29 +91,12 @@ class ClaudeStreamingClient(
                             }
                         }
                     }
-                }
 
-                // Process any remaining data in buffer
-                if (lineBuffer.isNotBlank()) {
-                    for (remaining in lineBuffer.toString().split('\n')) {
-                        val line = remaining.trim()
-                        if (line.startsWith("data: ")) {
-                            val data = line.removePrefix("data: ").trim()
-                            dataLineCount++
-                            if (data != "[DONE]") {
-                                val event = parseSseData(data)
-                                if (event != null) {
-                                    send(event)
-                                }
-                            }
-                        }
-                    }
+                    Logger.i(TAG, "Stream finished. Lines=$lineCount, dataEvents=$dataLineCount")
                 }
-
-                println("$TAG: Stream finished. Lines=$lineCount, dataEvents=$dataLineCount")
             }
         } catch (e: Exception) {
-            println("$TAG: Request failed: ${e::class.simpleName}: ${e.message}")
+            Logger.e(TAG, "Request failed: ${e::class.simpleName}: ${e.message}", e)
             send(ClaudeStreamEvent.Error("Request failed: ${e.message}"))
         }
     }
@@ -168,13 +147,62 @@ class ClaudeStreamingClient(
                     ClaudeStreamEvent.Error(parsed.error.message)
                 }
                 else -> {
-                    println("$TAG: Unknown SSE event type: ${data.take(100)}")
+                    Logger.w(TAG, "Unknown SSE event type: ${data.take(100)}")
                     null
                 }
             }
         } catch (e: Exception) {
-            println("$TAG: Parse error for data: ${data.take(200)}, error: ${e.message}")
+            Logger.e(TAG, "Parse error for data: ${data.take(200)}", e)
             ClaudeStreamEvent.Error("Parse error: ${e.message}")
         }
     }
+
+    private fun parseNonStreamingResponse(body: String): List<ClaudeStreamEvent> {
+        return try {
+            val response = json.decodeFromString(NonStreamingResponse.serializer(), body)
+            val events = mutableListOf<ClaudeStreamEvent>()
+            events.add(ClaudeStreamEvent.MessageStart(response.id, response.model))
+
+            response.content.forEachIndexed { index, block ->
+                when (block.type) {
+                    "text" -> {
+                        events.add(ClaudeStreamEvent.ContentBlockStart(index, "text"))
+                        events.add(ClaudeStreamEvent.TextDelta(block.text ?: ""))
+                        events.add(ClaudeStreamEvent.ContentBlockStop(index))
+                    }
+                    "tool_use" -> {
+                        events.add(ClaudeStreamEvent.ToolUseStart(index, block.id ?: "", block.name ?: ""))
+                        events.add(ClaudeStreamEvent.InputJsonDelta(block.input?.toString() ?: "{}"))
+                        events.add(ClaudeStreamEvent.ContentBlockStop(index))
+                    }
+                }
+            }
+
+            events.add(ClaudeStreamEvent.MessageDelta(response.stopReason))
+            events.add(ClaudeStreamEvent.MessageStop)
+            events
+        } catch (e: Exception) {
+            Logger.e(TAG, "Failed to parse non-streaming response", e)
+            listOf(ClaudeStreamEvent.Error("Failed to parse response: ${e.message}"))
+        }
+    }
+
+    @Serializable
+    private data class NonStreamingResponse(
+        val id: String,
+        val model: String,
+        val type: String = "message",
+        val role: String = "assistant",
+        val content: List<NonStreamingContentBlock>,
+        @SerialName("stop_reason") val stopReason: String? = null
+    )
+
+    @Serializable
+    private data class NonStreamingContentBlock(
+        val type: String,
+        val text: String? = null,
+        val id: String? = null,
+        val name: String? = null,
+        val input: JsonObject? = null
+    )
 }

@@ -4,6 +4,7 @@ import com.androidclaw.db.AndroidClawDb
 import com.androidclaw.shared.agent.AgentConfig
 import com.androidclaw.shared.agent.AgentLoop
 import com.androidclaw.shared.llm.ClaudeStreamingClient
+import com.androidclaw.shared.llm.LocalLlmStreamingClient
 import com.androidclaw.shared.memory.ConversationRepository
 import com.androidclaw.shared.memory.ConversationRepositoryImpl
 import com.androidclaw.shared.network.createHttpClient
@@ -28,5 +29,6 @@ val sharedModule = module {
         )
     }
     single { AgentConfig() }
-    factory { AgentLoop(get(), get<ToolRegistry>().getTools(), get(), get()) }
+    single { LocalLlmStreamingClient(get(named("streaming"))) }
+    factory { AgentLoop(get(), get<ToolRegistry>().getTools(), get(), get(), localLlmClient = get()) }
 }

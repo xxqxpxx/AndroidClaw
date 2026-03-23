@@ -35,5 +35,10 @@ out/
 # Kotlin build cache
 .kotlin/
 
-# Generated duplicate source sets
-androidApp/src/androidMain/
+# Firebase (contains API keys - each dev downloads their own)
+google-services.json
+
+# Secrets
+*.keystore
+*.jks
+signing.properties
