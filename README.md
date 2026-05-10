@@ -104,13 +104,14 @@ AndroidClaw/
    ```bash
    cp local.properties.example local.properties
    ```
-   
+
    Then edit with your values:
+
    ```properties
    sdk.dir=/path/to/android/sdk
    anthropic.api.key=your-api-key-here
    ```
-   
+
    ⚠️ **SECURITY:** Never commit `local.properties` — it contains your API keys!
 
 3. Add `google-services.json` (optional, for Firebase crash reporting):
@@ -120,7 +121,7 @@ AndroidClaw/
    cp google-services.json.example androidApp/google-services.json
    # Edit with your Firebase credentials
    ```
-   
+
    ⚠️ **SECURITY:** Never commit `google-services.json` — it's in `.gitignore`
 
 4. Build and install:
