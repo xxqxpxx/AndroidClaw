@@ -36,6 +36,7 @@ Maintainers have the right and responsibility to remove, edit, or reject contrib
 ## Scope
 
 This Code of Conduct applies to all project spaces, including:
+
 - GitHub issues and discussions
 - Pull requests and code reviews
 - Community events or meetings

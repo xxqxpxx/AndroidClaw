@@ -12,6 +12,7 @@ Thank you for your interest in contributing! We welcome issues, feature requests
 ## Development Setup
 
 ### Prerequisites
+
 - Android Studio Hedgehog or newer
 - JDK 17
 - Android SDK 35
@@ -35,6 +36,7 @@ Thank you for your interest in contributing! We welcome issues, feature requests
 ## Commit Messages
 
 Use clear, descriptive commit messages:
+
 - `feat: add new device action` (new feature)
 - `fix: resolve crash on device disconnect` (bug fix)
 - `docs: update README setup instructions` (documentation)
@@ -43,6 +45,7 @@ Use clear, descriptive commit messages:
 ## Reporting Issues
 
 When filing a bug report, include:
+
 - Android OS version
 - Device model
 - Steps to reproduce

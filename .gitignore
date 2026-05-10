@@ -39,15 +39,28 @@ Thumbs.db
 local.properties
 gradle.properties.local
 signing.properties
+fastlane/
 
-### Secrets & Credentials (DO NOT COMMIT)
+### Secrets & Credentials (NEVER COMMIT)
 .env
 .env.local
 .env.*.local
 *.keystore
+*.keystore.jks
 *.jks
+*.p12
+*.p8
 google-services.json
 firebase-debug.log
+api.key
+secret.key
+aws_credentials
+.aws/credentials
+
+### CI/CD Secrets
+.github/workflows/*.key
+secrets.yml
+.circleci/config.local.yml
 
 ### AI Model Artifacts (downloaded at runtime)
 *.onnx

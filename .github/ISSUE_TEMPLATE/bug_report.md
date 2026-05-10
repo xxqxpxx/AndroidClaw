@@ -9,6 +9,7 @@ A clear and concise description of what the bug is.
 
 **To Reproduce**
 Steps to reproduce the behavior:
+
 1. Go to '...'
 2. Click on '....'
 3. See error
@@ -17,12 +18,14 @@ Steps to reproduce the behavior:
 A clear and concise description of what you expected to happen.
 
 **Environment**
+
 - Android Version: [e.g. Android 14]
 - Device: [e.g. Pixel 8]
 - AndroidClaw Version: [e.g. 1.0.0]
 - AI Provider: [Claude / On-Device / Custom Server]
 
 **Logs**
+
 ```
 Paste relevant Logcat output here
 ```
