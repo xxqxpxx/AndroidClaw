@@ -95,30 +95,34 @@ AndroidClaw/
    cd AndroidClaw
    ```
 
-2. Add your API key to `local.properties`:
+2. Create `local.properties` with your config:
    ```properties
-   anthropic.api.key=sk-ant-your-key-here
+   sdk.dir=/path/to/android/sdk
+   anthropic.api.key=your-api-key-here
    ```
 
-3. Add `google-services.json` from Firebase Console to `androidApp/`
+3. Add `google-services.json` from [Firebase Console](https://console.firebase.google.com) to `androidApp/` (optional, for crash reporting)
 
 4. Build and install:
    ```bash
    ./gradlew :androidApp:installRelease
    ```
 
-### Permissions
-On first launch, the app requests all required permissions. Grant them all for full functionality.
+### Initial Setup
 
-### Accessibility Service
-For auto-sending messages in WhatsApp/Telegram/Signal:
-1. Go to Settings > Accessibility
-2. Find AndroidClaw and enable it
+On first launch, the app will:
+1. Request all required permissions (grant them all)
+2. Show onboarding to choose an AI provider
+3. Download models if using on-device inference
 
-### Device Admin (optional)
-For screen lock and security features:
-1. Go to app Settings > Device Control
-2. Tap "Enable" for Device Admin
+### Permissions Explained
+- **Contacts/Phone/SMS** — For messaging and calling actions
+- **Location** — For map navigation
+- **Calendar** — For viewing/creating events
+- **Microphone** — For voice input
+- **Camera** — For taking photos and scanning QR codes
+- **Accessibility** — For auto-sending messages (opt-in)
+- **Device Admin** — For advanced control (opt-in)
 
 ## LLM Provider Configuration
 
@@ -139,5 +143,56 @@ Connect to any OpenAI-compatible endpoint:
 - 16 KB page size compatible (AGP 8.5.2, `jniLibs.useLegacyPackaging = false`)
 - Adaptive launcher icon
 
+## Troubleshooting
+
+### App crashes on startup
+- Check `Logcat` in Android Studio for detailed errors
+- Ensure you have the correct API key configured
+- Try clearing app data: Settings > Apps > AndroidClaw > Storage > Clear Data
+
+### Tools not working
+- Verify all required permissions are granted
+- For SMS/calls: ensure Phone and Contacts permissions are enabled
+- For messaging apps: enable Accessibility Service in Settings
+
+### On-device LLM runs slowly
+- Reduce context window or max tokens in Settings
+- Close background apps to free RAM
+- Use a model optimized for your device (Gemma 2B recommended)
+
+### Model download stuck
+- Check internet connection and free storage (min 2 GB)
+- Try again—downloads resume from last completed chunk
+- Use custom server for faster testing
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Quick Start for Contributors
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+2. Fork the repo and create a feature branch
+3. Follow the code style and add tests
+4. Submit a pull request with a clear description
+
+## Support
+
+- **Questions?** Open a [GitHub Discussion](../../discussions)
+- **Bug report?** File a [GitHub Issue](../../issues)
+- **Security concern?** Please email maintainers privately
+
+## Roadmap
+
+- [ ] iOS app (Compose Multiplatform support)
+- [ ] Desktop companion app (web UI for management)
+- [ ] Plugin system for custom device actions
+- [ ] Cloud sync for multi-device orchestration
+- [ ] Improved model quantization for faster on-device inference
+
 ## License
-Private repository.
+
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+---
+
+**Maintained by** [Ahmed Abdul Fatah](https://github.com/xxqxpxx) and contributors ✨

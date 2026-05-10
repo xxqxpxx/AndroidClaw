@@ -1,0 +1,13 @@
+# This file is for local development only.
+# DO NOT commit to version control (included in .gitignore).
+# Each developer should create their own copy.
+
+# Android SDK location
+sdk.dir=/path/to/android/sdk
+
+# Anthropic API key (get from https://console.anthropic.com)
+# anthropic.api.key=your-api-key-here
+
+# Optional: Custom LLM server endpoint
+# llm.server.url=http://localhost:8000
+# llm.server.api.key=your-key-if-needed
