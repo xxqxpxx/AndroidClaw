@@ -119,6 +119,9 @@ class ChatViewModel(
                             Log.e(TAG, "Agent error: ${event.throwable.message}", event.throwable)
                             handleError(text, event.throwable, attempt)
                         }
+                        is AgentEvent.Usage -> {
+                            Log.d(TAG, "Usage: in=${event.inputTokens} out=${event.outputTokens}")
+                        }
                     }
                 }
             } catch (e: CancellationException) {

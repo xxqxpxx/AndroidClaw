@@ -25,7 +25,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToModels: () -> Unit,
     onNavigateToPersona: () -> Unit = {},
-    onNavigateToStats: () -> Unit = {}
+    onNavigateToStats: () -> Unit = {},
+    onNavigateToTools: () -> Unit = {}
 ) {
     val settings = koinInject<SettingsManager>()
     val deviceAdminManager = koinInject<DeviceAdminManager>()
@@ -301,6 +302,17 @@ fun SettingsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                     },
                     modifier = Modifier.clickable(onClick = onNavigateToStats)
+                )
+            }
+
+            item {
+                ListItem(
+                    headlineContent = { Text("Tools") },
+                    supportingContent = { Text("Browse the tools available to the AI agent") },
+                    trailingContent = {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                    },
+                    modifier = Modifier.clickable(onClick = onNavigateToTools)
                 )
             }
 

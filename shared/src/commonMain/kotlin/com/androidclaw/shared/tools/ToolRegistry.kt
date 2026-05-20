@@ -36,6 +36,16 @@ class ToolRegistry(
         tools.add(WebContentTool(httpClient))
         tools.add(DateTimeTool())
         tools.add(CalculatorTool())
+        tools.add(UnitConverterTool())
+        tools.add(PasswordGeneratorTool())
+        tools.add(EncodingTool())
+        tools.add(HashTool())
+        tools.add(WeatherTool(httpClient))
+        tools.add(QrCodeGeneratorTool())
+        tools.add(CurrencyConverterTool(httpClient))
+        tools.add(TranslationTool(httpClient))
+        tools.add(TimezoneConverterTool())
+        tools.add(IpLookupTool(httpClient))
 
         // Code execution
         tools.add(CodeExecutionTool())
