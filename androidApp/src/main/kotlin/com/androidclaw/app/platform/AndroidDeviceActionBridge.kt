@@ -29,7 +29,9 @@ import android.telephony.SmsManager
 import android.net.wifi.WifiManager
 import android.util.Log
 import android.view.KeyEvent
+import android.webkit.MimeTypeMap
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import com.androidclaw.app.admin.ClawDeviceAdminReceiver
 import com.androidclaw.app.service.AutoSendAccessibilityService
 import com.androidclaw.shared.tools.DeviceActionBridge
@@ -37,6 +39,7 @@ import com.google.firebase.crashlytics.FirebaseCrashlytics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.File
 import kotlin.coroutines.resume
 
 class AndroidDeviceActionBridge(
@@ -311,15 +314,31 @@ class AndroidDeviceActionBridge(
     override suspend fun getRecentNotifications(count: Int): Result<String> {
         logAction("getRecentNotifications", "count=$count")
         return runCatching {
-            "Notification access requires NotificationListenerService permission. " +
-                "Please enable it in Settings > Apps > Special access > Notification access."
+            if (!com.androidclaw.app.service.ClawNotificationListenerService.isConnected) {
+                return@runCatching "Notification access is not enabled. Please go to Settings > Apps > Special access > Notification access and enable AndroidClaw."
+            }
+            val notifications = com.androidclaw.app.service.ClawNotificationListenerService.getRecent(count)
+            if (notifications.isEmpty()) {
+                "No recent notifications."
+            } else {
+                val lines = notifications.mapIndexed { i, n -> "${i + 1}. ${n.toReadableString()}" }
+                "Recent notifications (${notifications.size}):\n${lines.joinToString("\n")}"
+            }
         }
     }
 
     override suspend fun dismissNotification(key: String): Result<String> {
         logAction("dismissNotification", "key=$key")
         return runCatching {
-            "Notification dismissal requires NotificationListenerService permission."
+            val service = com.androidclaw.app.service.ClawNotificationListenerService.instance
+                ?: return@runCatching "Notification listener service is not active. Enable it in Settings > Apps > Special access > Notification access."
+            if (key == "all") {
+                service.dismissAll()
+                "All notifications dismissed."
+            } else {
+                val success = service.dismissByKey(key)
+                if (success) "Notification dismissed: $key" else "Failed to dismiss notification: $key"
+            }
         }
     }
 
@@ -1073,6 +1092,44 @@ class AndroidDeviceActionBridge(
     // Open URL
     // ==========================================
 
+    override suspend fun shareMedia(filePath: String, packageName: String?): Result<String> {
+        logAction("shareMedia", "path=$filePath, pkg=$packageName")
+        return runCatching {
+            val file = File(filePath)
+            if (!file.exists()) throw IllegalArgumentException("File not found: $filePath")
+
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val ext = MimeTypeMap.getFileExtensionFromUrl(filePath)
+            val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                packageName?.let { setPackage(it) }
+            }
+
+            if (packageName != null) {
+                context.startActivity(intent)
+                "Sharing file to $packageName"
+            } else {
+                val chooser = Intent.createChooser(intent, "Share file").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(chooser)
+                "Opening share dialog for file"
+            }
+        }.also { r ->
+            r.onSuccess { logResult("shareMedia", it) }
+            r.onFailure { logError("shareMedia", it) }
+        }
+    }
+
     override suspend fun openUrl(url: String, packageName: String?): Result<String> {
         logAction("openUrl", "url=$url, pkg=$packageName")
         return runCatching {
@@ -1308,16 +1365,25 @@ class AndroidDeviceActionBridge(
         }
     }
 
-    override suspend fun navigateTo(destination: String): Result<String> {
-        logAction("navigateTo", "destination=$destination")
+    override suspend fun navigateTo(destination: String, mode: String): Result<String> {
+        logAction("navigateTo", "destination=$destination, mode=$mode")
         return runCatching {
-            val uri = Uri.parse("google.navigation:q=${Uri.encode(destination)}")
+            val modeChar = when (mode.lowercase()) {
+                "driving" -> "d"
+                "walking" -> "w"
+                "cycling", "bicycling" -> "b"
+                "transit" -> "t"
+                else -> ""
+            }
+            val modeParam = if (modeChar.isNotEmpty()) "&mode=$modeChar" else ""
+            val uri = Uri.parse("google.navigation:q=${Uri.encode(destination)}$modeParam")
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage("com.google.android.apps.maps")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-            "Starting navigation to $destination"
+            val modeLabel = if (mode.isNotEmpty()) " ($mode)" else ""
+            "Starting navigation to $destination$modeLabel"
         }.also { r ->
             r.onSuccess { logResult("navigateTo", it) }
             r.onFailure { logError("navigateTo", it) }
@@ -2642,8 +2708,2684 @@ class AndroidDeviceActionBridge(
     }
 
     // ==========================================
+    // File Management
+    // ==========================================
+
+    override suspend fun listFiles(directory: String, sortBy: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("listFiles", "dir=$directory, sortBy=$sortBy")
+        runCatching {
+            val dir = resolveDirectory(directory)
+            if (!dir.exists() || !dir.isDirectory) {
+                return@runCatching "Directory not found: ${dir.absolutePath}"
+            }
+            val files = dir.listFiles() ?: return@runCatching "Cannot list files in ${dir.absolutePath}"
+            if (files.isEmpty()) return@runCatching "No files in ${dir.absolutePath}"
+
+            val sorted = when (sortBy.lowercase()) {
+                "name" -> files.sortedBy { it.name.lowercase() }
+                "size" -> files.sortedByDescending { it.length() }
+                "type" -> files.sortedBy { it.extension.lowercase() }
+                else -> files.sortedByDescending { it.lastModified() } // date (default)
+            }
+
+            val lines = sorted.mapIndexed { i, f ->
+                val size = formatFileSize(f.length())
+                val modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(f.lastModified()))
+                val type = if (f.isDirectory) "DIR" else f.extension.uppercase().ifEmpty { "FILE" }
+                "${i + 1}. [$type] ${f.name} ($size, $modified)"
+            }
+            "Files in ${dir.absolutePath} (${sorted.size} items, sorted by $sortBy):\n${lines.joinToString("\n")}"
+        }.also { r ->
+            r.onSuccess { logResult("listFiles", it.take(200)) }
+            r.onFailure { logError("listFiles", it) }
+        }
+    }
+
+    override suspend fun getFileInfo(filePath: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getFileInfo", "path=$filePath")
+        runCatching {
+            val file = java.io.File(filePath)
+            if (!file.exists()) return@runCatching "File not found: $filePath"
+            val size = formatFileSize(file.length())
+            val modified = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(file.lastModified()))
+            buildString {
+                appendLine("Name: ${file.name}")
+                appendLine("Path: ${file.absolutePath}")
+                appendLine("Size: $size")
+                appendLine("Type: ${if (file.isDirectory) "Directory" else file.extension.uppercase().ifEmpty { "Unknown" }}")
+                appendLine("Modified: $modified")
+                appendLine("Readable: ${file.canRead()}")
+                appendLine("Writable: ${file.canWrite()}")
+            }
+        }
+    }
+
+    override suspend fun deleteFile(filePath: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("deleteFile", "path=$filePath")
+        runCatching {
+            val file = java.io.File(filePath)
+            if (!file.exists()) return@runCatching "File not found: $filePath"
+            if (file.isDirectory) {
+                if (file.deleteRecursively()) "Deleted directory: ${file.name}" else "Failed to delete directory: ${file.name}"
+            } else {
+                if (file.delete()) "Deleted file: ${file.name}" else "Failed to delete file: ${file.name}"
+            }
+        }
+    }
+
+    override suspend fun moveFile(sourcePath: String, destDirectory: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("moveFile", "source=$sourcePath, dest=$destDirectory")
+        runCatching {
+            val source = java.io.File(sourcePath)
+            if (!source.exists()) return@runCatching "Source file not found: $sourcePath"
+            val destDir = resolveDirectory(destDirectory)
+            if (!destDir.exists()) destDir.mkdirs()
+            val dest = java.io.File(destDir, source.name)
+            if (dest.exists()) return@runCatching "File already exists at destination: ${dest.absolutePath}"
+            if (source.renameTo(dest)) {
+                "Moved ${source.name} to ${dest.absolutePath}"
+            } else {
+                // renameTo fails across mount points; fall back to copy+delete
+                source.copyTo(dest, overwrite = false)
+                source.delete()
+                "Moved ${source.name} to ${dest.absolutePath}"
+            }
+        }
+    }
+
+    override suspend fun organizeFiles(directory: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("organizeFiles", "dir=$directory")
+        runCatching {
+            val dir = resolveDirectory(directory)
+            if (!dir.exists() || !dir.isDirectory) return@runCatching "Directory not found: ${dir.absolutePath}"
+            val files = dir.listFiles()?.filter { it.isFile } ?: return@runCatching "No files found"
+            if (files.isEmpty()) return@runCatching "No files to organize"
+
+            val categoryMap = mapOf(
+                "Images" to setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "heic", "heif"),
+                "Videos" to setOf("mp4", "avi", "mkv", "mov", "wmv", "flv", "3gp", "webm"),
+                "Audio" to setOf("mp3", "wav", "flac", "aac", "ogg", "m4a", "wma"),
+                "Documents" to setOf("pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "txt", "rtf", "odt", "csv"),
+                "Archives" to setOf("zip", "rar", "7z", "tar", "gz", "bz2"),
+                "APKs" to setOf("apk", "xapk", "apkm"),
+                "Code" to setOf("kt", "java", "py", "js", "ts", "html", "css", "json", "xml")
+            )
+
+            var movedCount = 0
+            val summary = mutableMapOf<String, Int>()
+            for (file in files) {
+                val ext = file.extension.lowercase()
+                val category = categoryMap.entries.find { ext in it.value }?.key ?: "Other"
+                val categoryDir = java.io.File(dir, category)
+                if (!categoryDir.exists()) categoryDir.mkdirs()
+                val dest = java.io.File(categoryDir, file.name)
+                if (!dest.exists() && file.renameTo(dest)) {
+                    movedCount++
+                    summary[category] = (summary[category] ?: 0) + 1
+                }
+            }
+            val summaryStr = summary.entries.joinToString(", ") { "${it.value} ${it.key}" }
+            "Organized $movedCount files in ${dir.name}: $summaryStr"
+        }
+    }
+
+    // ==========================================
+    // Ride-Hailing
+    // ==========================================
+
+    override suspend fun orderRide(destination: String, service: String): Result<String> {
+        logAction("orderRide", "dest=$destination, service=$service")
+        return runCatching {
+            val encodedDest = android.net.Uri.encode(destination)
+            val (deepLink, webFallback, appName) = when (service.lowercase()) {
+                "uber" -> Triple(
+                    "uber://?action=setPickup&pickup=my_location&dropoff[formatted_address]=$encodedDest",
+                    "https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=$encodedDest",
+                    "Uber"
+                )
+                "lyft" -> Triple(
+                    "lyft://ridetype?id=lyft&destination[address]=$encodedDest",
+                    "https://ride.lyft.com/",
+                    "Lyft"
+                )
+                "careem" -> Triple(
+                    "careem://booking?pickup=current&dropoff_name=$encodedDest",
+                    "https://app.careem.com/",
+                    "Careem"
+                )
+                "bolt" -> Triple(
+                    "bolt://ride?destination=$encodedDest",
+                    "https://bolt.eu/",
+                    "Bolt"
+                )
+                else -> Triple(
+                    "uber://?action=setPickup&pickup=my_location&dropoff[formatted_address]=$encodedDest",
+                    "https://m.uber.com/ul/?action=setPickup&pickup=my_location&dropoff[formatted_address]=$encodedDest",
+                    "Uber"
+                )
+            }
+
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+                "Opening $appName with destination: $destination"
+            } catch (_: Exception) {
+                // Fall back to web
+                val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse(webFallback)).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(webIntent)
+                "Opening $appName in browser (app not installed) with destination: $destination"
+            }
+        }.also { r ->
+            r.onSuccess { logResult("orderRide", it) }
+            r.onFailure { logError("orderRide", it) }
+        }
+    }
+
+    // ==========================================
+    // Email Notifications
+    // ==========================================
+
+    override suspend fun getEmailNotifications(count: Int): Result<String> {
+        logAction("getEmailNotifications", "count=$count")
+        return runCatching {
+            if (!com.androidclaw.app.service.ClawNotificationListenerService.isConnected) {
+                return@runCatching "Notification access is not enabled. Please enable it in Settings > Apps > Special access > Notification access to read email notifications."
+            }
+            val emails = com.androidclaw.app.service.ClawNotificationListenerService.getEmailNotifications(count)
+            if (emails.isEmpty()) {
+                "No email notifications found. Make sure you have email app notifications enabled."
+            } else {
+                val lines = emails.mapIndexed { i, n -> "${i + 1}. ${n.toReadableString()}" }
+                "Email notifications (${emails.size}):\n${lines.joinToString("\n")}"
+            }
+        }
+    }
+
+    // ==========================================
+    // Generic Deep-Link
+    // ==========================================
+
+    override suspend fun openDeepLink(uri: String, packageName: String?, fallbackUrl: String?): Result<String> {
+        logAction("openDeepLink", "uri=$uri, pkg=$packageName")
+        return runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                packageName?.let { setPackage(it) }
+            }
+            try {
+                context.startActivity(intent)
+                "Opened: $uri" + (packageName?.let { " in $it" } ?: "")
+            } catch (_: Exception) {
+                if (fallbackUrl != null) {
+                    val fallback = Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(fallback)
+                    "App not available, opened fallback URL: $fallbackUrl"
+                } else {
+                    "Failed to open: $uri. App may not be installed."
+                }
+            }
+        }.also { r ->
+            r.onSuccess { logResult("openDeepLink", it) }
+            r.onFailure { logError("openDeepLink", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Settings Toggles
+    // ==========================================
+
+    override suspend fun setAutoBrightness(enabled: Boolean): Result<String> {
+        logAction("setAutoBrightness", "enabled=$enabled")
+        return runCatching {
+            if (Settings.System.canWrite(context)) {
+                Settings.System.putInt(
+                    context.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS_MODE,
+                    if (enabled) Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC else Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+                )
+                "Auto-brightness ${if (enabled) "enabled" else "disabled"}"
+            } else {
+                val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Please grant write settings permission, then try again."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setAutoBrightness", it) }
+            r.onFailure { logError("setAutoBrightness", it) }
+        }
+    }
+
+    override suspend fun setLocationEnabled(enabled: Boolean): Result<String> {
+        logAction("setLocationEnabled", "enabled=$enabled")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Location settings. Please toggle location ${if (enabled) "on" else "off"}."
+        }.also { r ->
+            r.onSuccess { logResult("setLocationEnabled", it) }
+            r.onFailure { logError("setLocationEnabled", it) }
+        }
+    }
+
+    override suspend fun setAirplaneMode(enabled: Boolean): Result<String> {
+        logAction("setAirplaneMode", "enabled=$enabled")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_AIRPLANE_MODE_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Airplane mode settings. Please toggle airplane mode ${if (enabled) "on" else "off"}."
+        }.also { r ->
+            r.onSuccess { logResult("setAirplaneMode", it) }
+            r.onFailure { logError("setAirplaneMode", it) }
+        }
+    }
+
+    override suspend fun setHotspot(enabled: Boolean): Result<String> {
+        logAction("setHotspot", "enabled=$enabled")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened wireless settings. Please toggle hotspot ${if (enabled) "on" else "off"}."
+        }.also { r ->
+            r.onSuccess { logResult("setHotspot", it) }
+            r.onFailure { logError("setHotspot", it) }
+        }
+    }
+
+    override suspend fun setMobileData(enabled: Boolean): Result<String> {
+        logAction("setMobileData", "enabled=$enabled")
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val intent = Intent(Settings.Panel.ACTION_INTERNET_CONNECTIVITY).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened internet connectivity panel. Please toggle mobile data ${if (enabled) "on" else "off"}."
+            } else {
+                val intent = Intent(Settings.ACTION_DATA_ROAMING_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened mobile data settings. Please toggle mobile data ${if (enabled) "on" else "off"}."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setMobileData", it) }
+            r.onFailure { logError("setMobileData", it) }
+        }
+    }
+
+    override suspend fun openNfcSettings(): Result<String> {
+        logAction("openNfcSettings")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_NFC_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened NFC settings."
+        }.also { r ->
+            r.onSuccess { logResult("openNfcSettings", it) }
+            r.onFailure { logError("openNfcSettings", it) }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override suspend fun getWifiInfo(): Result<String> {
+        logAction("getWifiInfo")
+        return runCatching {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            val info = wifiManager.connectionInfo
+            val dhcp = wifiManager.dhcpInfo
+            buildString {
+                appendLine("Wi-Fi Information:")
+                @Suppress("DEPRECATION")
+                appendLine("  SSID: ${info.ssid?.replace("\"", "") ?: "Unknown"}")
+                appendLine("  BSSID: ${info.bssid ?: "Unknown"}")
+                appendLine("  Link speed: ${info.linkSpeed} Mbps")
+                appendLine("  RSSI: ${info.rssi} dBm")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    appendLine("  Frequency: ${info.frequency} MHz")
+                }
+                @Suppress("DEPRECATION")
+                val ip = info.ipAddress
+                if (ip != 0) {
+                    val ipStr = "${ip and 0xFF}.${ip shr 8 and 0xFF}.${ip shr 16 and 0xFF}.${ip shr 24 and 0xFF}"
+                    appendLine("  IP: $ipStr")
+                }
+                appendLine("  Wi-Fi enabled: ${wifiManager.isWifiEnabled}")
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getWifiInfo", it) }
+            r.onFailure { logError("getWifiInfo", it) }
+        }
+    }
+
+    override suspend fun getVolumeInfo(): Result<String> {
+        logAction("getVolumeInfo")
+        return runCatching {
+            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            buildString {
+                appendLine("Volume levels:")
+                val streams = mapOf(
+                    "Media" to AudioManager.STREAM_MUSIC,
+                    "Ring" to AudioManager.STREAM_RING,
+                    "Alarm" to AudioManager.STREAM_ALARM,
+                    "Notification" to AudioManager.STREAM_NOTIFICATION,
+                    "System" to AudioManager.STREAM_SYSTEM,
+                    "Voice Call" to AudioManager.STREAM_VOICE_CALL
+                )
+                for ((name, stream) in streams) {
+                    val current = audioManager.getStreamVolume(stream)
+                    val max = audioManager.getStreamMaxVolume(stream)
+                    val pct = if (max > 0) (current * 100) / max else 0
+                    appendLine("  $name: $current/$max ($pct%)")
+                }
+                appendLine("  Ringer mode: ${when (audioManager.ringerMode) {
+                    AudioManager.RINGER_MODE_NORMAL -> "Normal"
+                    AudioManager.RINGER_MODE_VIBRATE -> "Vibrate"
+                    AudioManager.RINGER_MODE_SILENT -> "Silent"
+                    else -> "Unknown"
+                }}")
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getVolumeInfo", it) }
+            r.onFailure { logError("getVolumeInfo", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Alarm/Timer Management
+    // ==========================================
+
+    override suspend fun listAlarms(): Result<String> {
+        logAction("listAlarms")
+        return runCatching {
+            // Android doesn't provide a direct API to query alarms set in the Clock app.
+            // We open the alarm app so the user can see them.
+            val intent = Intent(AlarmClock.ACTION_SHOW_ALARMS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened alarms list in Clock app."
+        }.also { r ->
+            r.onSuccess { logResult("listAlarms", it) }
+            r.onFailure { logError("listAlarms", it) }
+        }
+    }
+
+    override suspend fun cancelTimer(): Result<String> {
+        logAction("cancelTimer")
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val intent = Intent(AlarmClock.ACTION_DISMISS_TIMER).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Timer dismissed."
+            } else {
+                val intent = Intent(AlarmClock.ACTION_SHOW_TIMERS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened timers. Please cancel the timer manually."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("cancelTimer", it) }
+            r.onFailure { logError("cancelTimer", it) }
+        }
+    }
+
+    override suspend fun getReminders(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getReminders")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_CALENDAR)) {
+                return@runCatching "Calendar permission not granted. Reminders are stored as calendar events."
+            }
+
+            val now = System.currentTimeMillis()
+            val end = now + 30L * 24 * 60 * 60 * 1000 // 30 days ahead
+
+            val reminders = mutableListOf<String>()
+            val projection = arrayOf(
+                CalendarContract.Reminders._ID,
+                CalendarContract.Reminders.TITLE,
+                CalendarContract.Reminders.DTSTART,
+                CalendarContract.Reminders.MINUTES
+            )
+
+            // Query calendar events that might be reminders (all-day or short events)
+            context.contentResolver.query(
+                CalendarContract.Events.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Events._ID,
+                    CalendarContract.Events.TITLE,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DESCRIPTION
+                ),
+                "${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ?",
+                arrayOf(now.toString(), end.toString()),
+                "${CalendarContract.Events.DTSTART} ASC"
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(CalendarContract.Events._ID)
+                val titleIdx = cursor.getColumnIndex(CalendarContract.Events.TITLE)
+                val startIdx = cursor.getColumnIndex(CalendarContract.Events.DTSTART)
+                var count = 0
+                while (cursor.moveToNext() && count < 20) {
+                    val id = cursor.getLong(idIdx)
+                    val title = cursor.getString(titleIdx) ?: "Untitled"
+                    val start = cursor.getLong(startIdx)
+                    val date = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(start))
+                    reminders.add("- [ID:$id] $title ($date)")
+                    count++
+                }
+            }
+
+            if (reminders.isEmpty()) {
+                "No upcoming reminders/events found."
+            } else {
+                buildString {
+                    appendLine("Upcoming reminders/events (${reminders.size}):")
+                    reminders.forEach { appendLine(it) }
+                }.trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getReminders", it) }
+            r.onFailure { logError("getReminders", it) }
+        }
+    }
+
+    override suspend fun deleteReminder(id: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("deleteReminder", "id=$id")
+        runCatching {
+            if (!hasPermission(Manifest.permission.WRITE_CALENDAR)) {
+                return@runCatching "Calendar write permission not granted."
+            }
+            val eventId = id.toLongOrNull()
+                ?: return@runCatching "Invalid reminder ID: $id"
+            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+            val deleted = context.contentResolver.delete(uri, null, null)
+            if (deleted > 0) "Reminder deleted (ID: $id)" else "Reminder not found (ID: $id)"
+        }.also { r ->
+            r.onSuccess { logResult("deleteReminder", it) }
+            r.onFailure { logError("deleteReminder", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Contact Management
+    // ==========================================
+
+    override suspend fun editContact(name: String, newPhone: String, newEmail: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("editContact", "name=$name")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_CONTACTS)) {
+                return@runCatching "Contacts permission not granted."
+            }
+
+            // Find contact by name
+            var contactId: Long = -1
+            val uri = ContactsContract.Contacts.CONTENT_URI
+            val selection = "${ContactsContract.Contacts.DISPLAY_NAME} LIKE ?"
+            val selectionArgs = arrayOf("%$name%")
+            context.contentResolver.query(uri, arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+                selection, selectionArgs, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    contactId = cursor.getLong(cursor.getColumnIndex(ContactsContract.Contacts._ID))
+                }
+            }
+
+            if (contactId == -1L) {
+                return@runCatching "Contact not found: $name"
+            }
+
+            // Open contact for editing
+            val contactUri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, contactId)
+            val intent = Intent(Intent.ACTION_EDIT).apply {
+                data = contactUri
+                if (newPhone.isNotEmpty()) putExtra(ContactsContract.Intents.Insert.PHONE, newPhone)
+                if (newEmail.isNotEmpty()) putExtra(ContactsContract.Intents.Insert.EMAIL, newEmail)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opening contact editor for $name"
+        }.also { r ->
+            r.onSuccess { logResult("editContact", it) }
+            r.onFailure { logError("editContact", it) }
+        }
+    }
+
+    override suspend fun deleteContact(name: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("deleteContact", "name=$name")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_CONTACTS) || !hasPermission(Manifest.permission.WRITE_CONTACTS)) {
+                return@runCatching "Contacts read/write permission not granted."
+            }
+
+            // Find contact by name
+            var contactId: Long = -1
+            var displayName = ""
+            context.contentResolver.query(
+                ContactsContract.Contacts.CONTENT_URI,
+                arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+                "${ContactsContract.Contacts.DISPLAY_NAME} LIKE ?",
+                arrayOf("%$name%"),
+                null
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    contactId = cursor.getLong(cursor.getColumnIndex(ContactsContract.Contacts._ID))
+                    displayName = cursor.getString(cursor.getColumnIndex(ContactsContract.Contacts.DISPLAY_NAME)) ?: name
+                }
+            }
+
+            if (contactId == -1L) {
+                return@runCatching "Contact not found: $name"
+            }
+
+            // Open contact for viewing — let user confirm deletion from there
+            val contactUri = ContentUris.withAppendedId(ContactsContract.Contacts.CONTENT_URI, contactId)
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = contactUri
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened contact '$displayName'. Please use the delete option in the contact details."
+        }.also { r ->
+            r.onSuccess { logResult("deleteContact", it) }
+            r.onFailure { logError("deleteContact", it) }
+        }
+    }
+
+    override suspend fun getFavoriteContacts(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getFavoriteContacts")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_CONTACTS)) {
+                return@runCatching "Contacts permission not granted."
+            }
+
+            val favorites = mutableListOf<String>()
+            context.contentResolver.query(
+                ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                arrayOf(
+                    ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                    ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    ContactsContract.CommonDataKinds.Phone.STARRED
+                ),
+                "${ContactsContract.CommonDataKinds.Phone.STARRED} = 1",
+                null,
+                "${ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME} ASC"
+            )?.use { cursor ->
+                val nameIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME)
+                val phoneIdx = cursor.getColumnIndex(ContactsContract.CommonDataKinds.Phone.NUMBER)
+                while (cursor.moveToNext()) {
+                    val cName = cursor.getString(nameIdx) ?: "Unknown"
+                    val phone = cursor.getString(phoneIdx) ?: ""
+                    favorites.add("- $cName: $phone")
+                }
+            }
+
+            if (favorites.isEmpty()) {
+                "No favorite contacts found."
+            } else {
+                buildString {
+                    appendLine("Favorite contacts (${favorites.size}):")
+                    favorites.forEach { appendLine(it) }
+                }.trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getFavoriteContacts", it) }
+            r.onFailure { logError("getFavoriteContacts", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: SMS Management
+    // ==========================================
+
+    override suspend fun searchSms(query: String, count: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("searchSms", "query=$query, count=$count")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_SMS)) {
+                return@runCatching "SMS permission not granted."
+            }
+
+            val messages = mutableListOf<String>()
+            context.contentResolver.query(
+                Telephony.Sms.CONTENT_URI,
+                arrayOf(
+                    Telephony.Sms.ADDRESS,
+                    Telephony.Sms.BODY,
+                    Telephony.Sms.DATE,
+                    Telephony.Sms.TYPE
+                ),
+                "${Telephony.Sms.BODY} LIKE ?",
+                arrayOf("%$query%"),
+                "${Telephony.Sms.DATE} DESC"
+            )?.use { cursor ->
+                val addrIdx = cursor.getColumnIndex(Telephony.Sms.ADDRESS)
+                val bodyIdx = cursor.getColumnIndex(Telephony.Sms.BODY)
+                val dateIdx = cursor.getColumnIndex(Telephony.Sms.DATE)
+                val typeIdx = cursor.getColumnIndex(Telephony.Sms.TYPE)
+                var c = 0
+                while (cursor.moveToNext() && c < count) {
+                    val addr = cursor.getString(addrIdx) ?: "Unknown"
+                    val body = cursor.getString(bodyIdx) ?: ""
+                    val date = cursor.getLong(dateIdx)
+                    val type = cursor.getInt(typeIdx)
+                    val direction = if (type == Telephony.Sms.MESSAGE_TYPE_INBOX) "from" else "to"
+                    val dateStr = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(date))
+                    messages.add("- [$dateStr] $direction $addr: ${body.take(100)}")
+                    c++
+                }
+            }
+
+            if (messages.isEmpty()) {
+                "No messages found matching \"$query\""
+            } else {
+                buildString {
+                    appendLine("Messages matching \"$query\" (${messages.size}):")
+                    messages.forEach { appendLine(it) }
+                }.trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("searchSms", it) }
+            r.onFailure { logError("searchSms", it) }
+        }
+    }
+
+    override suspend fun deleteSmsConversation(contactName: String): Result<String> {
+        logAction("deleteSmsConversation", "contact=$contactName")
+        return runCatching {
+            // Open the default SMS app — direct deletion requires DEFAULT_SMS_APP role
+            val intent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_APP_MESSAGING)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened messaging app. Please find and delete the conversation with $contactName."
+        }.also { r ->
+            r.onSuccess { logResult("deleteSmsConversation", it) }
+            r.onFailure { logError("deleteSmsConversation", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Calendar Management
+    // ==========================================
+
+    override suspend fun deleteCalendarEvent(eventId: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("deleteCalendarEvent", "eventId=$eventId")
+        runCatching {
+            if (!hasPermission(Manifest.permission.WRITE_CALENDAR)) {
+                return@runCatching "Calendar write permission not granted."
+            }
+            val id = eventId.toLongOrNull()
+                ?: return@runCatching "Invalid event ID: $eventId"
+            val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id)
+            val deleted = context.contentResolver.delete(uri, null, null)
+            if (deleted > 0) "Calendar event deleted (ID: $eventId)" else "Event not found (ID: $eventId)"
+        }.also { r ->
+            r.onSuccess { logResult("deleteCalendarEvent", it) }
+            r.onFailure { logError("deleteCalendarEvent", it) }
+        }
+    }
+
+    override suspend fun searchCalendarEvents(query: String, daysAhead: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("searchCalendarEvents", "query=$query, daysAhead=$daysAhead")
+        runCatching {
+            if (!hasPermission(Manifest.permission.READ_CALENDAR)) {
+                return@runCatching "Calendar permission not granted."
+            }
+
+            val now = System.currentTimeMillis()
+            val end = now + daysAhead * 24L * 60 * 60 * 1000
+            val events = mutableListOf<String>()
+
+            context.contentResolver.query(
+                CalendarContract.Events.CONTENT_URI,
+                arrayOf(
+                    CalendarContract.Events._ID,
+                    CalendarContract.Events.TITLE,
+                    CalendarContract.Events.DTSTART,
+                    CalendarContract.Events.DTEND,
+                    CalendarContract.Events.EVENT_LOCATION
+                ),
+                "${CalendarContract.Events.TITLE} LIKE ? AND ${CalendarContract.Events.DTSTART} >= ? AND ${CalendarContract.Events.DTSTART} <= ?",
+                arrayOf("%$query%", now.toString(), end.toString()),
+                "${CalendarContract.Events.DTSTART} ASC"
+            )?.use { cursor ->
+                val idIdx = cursor.getColumnIndex(CalendarContract.Events._ID)
+                val titleIdx = cursor.getColumnIndex(CalendarContract.Events.TITLE)
+                val startIdx = cursor.getColumnIndex(CalendarContract.Events.DTSTART)
+                val endIdx = cursor.getColumnIndex(CalendarContract.Events.DTEND)
+                val locIdx = cursor.getColumnIndex(CalendarContract.Events.EVENT_LOCATION)
+                var count = 0
+                while (cursor.moveToNext() && count < 20) {
+                    val id = cursor.getLong(idIdx)
+                    val title = cursor.getString(titleIdx) ?: "Untitled"
+                    val start = cursor.getLong(startIdx)
+                    val endTime = cursor.getLong(endIdx)
+                    val location = cursor.getString(locIdx) ?: ""
+                    val startDate = java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(start))
+                    val endDate = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                        .format(java.util.Date(endTime))
+                    val entry = buildString {
+                        append("- [ID:$id] $title ($startDate - $endDate)")
+                        if (location.isNotEmpty()) append(" @ $location")
+                    }
+                    events.add(entry)
+                    count++
+                }
+            }
+
+            if (events.isEmpty()) {
+                "No events found matching \"$query\" in the next $daysAhead days"
+            } else {
+                buildString {
+                    appendLine("Events matching \"$query\" (${events.size}):")
+                    events.forEach { appendLine(it) }
+                }.trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("searchCalendarEvents", it) }
+            r.onFailure { logError("searchCalendarEvents", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Phone Management
+    // ==========================================
+
+    override suspend fun blockNumber(phoneNumber: String): Result<String> {
+        logAction("blockNumber", "phone=$phoneNumber")
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val intent = Intent(android.telecom.TelecomManager.ACTION_CHANGE_PHONE_ACCOUNTS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    // Try the direct block number intent on supported devices
+                    val blockIntent = Intent("android.provider.action.MANAGE_BLOCKED_NUMBERS").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(blockIntent)
+                    "Opened blocked numbers settings. Please add $phoneNumber to the blocked list."
+                } catch (_: Exception) {
+                    context.startActivity(intent)
+                    "Opened phone settings. Please navigate to blocked numbers and add $phoneNumber."
+                }
+            } else {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened call settings. Please find the block number option and add $phoneNumber."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("blockNumber", it) }
+            r.onFailure { logError("blockNumber", it) }
+        }
+    }
+
+    override suspend fun checkVoicemail(): Result<String> {
+        logAction("checkVoicemail")
+        return runCatching {
+            val intent = Intent(Intent.ACTION_CALL).apply {
+                data = Uri.parse("voicemail:")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+                "Opening voicemail..."
+            } catch (_: Exception) {
+                // Fallback: open the Phone app
+                val fallback = Intent(Intent.ACTION_DIAL).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallback)
+                "Opened phone dialer. Please check your voicemail from there."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("checkVoicemail", it) }
+            r.onFailure { logError("checkVoicemail", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Notification Interaction
+    // ==========================================
+
+    override suspend fun replyToNotification(key: String, text: String): Result<String> {
+        logAction("replyToNotification", "key=$key, textLen=${text.length}")
+        return runCatching {
+            val service = com.androidclaw.app.service.ClawNotificationListenerService.instance
+                ?: return@runCatching "Notification listener service is not active. Enable it in Settings > Apps > Special access > Notification access."
+
+            val notifications = com.androidclaw.app.service.ClawNotificationListenerService.getRecent(50)
+            val target = notifications.find { it.key == key }
+                ?: return@runCatching "Notification not found: $key"
+
+            // Find the remote input action (reply action)
+            val sbn = service.activeNotifications.find { it.key == key }
+                ?: return@runCatching "Notification no longer active: $key"
+
+            val notification = sbn.notification
+            val actions = notification.actions ?: return@runCatching "No actions available on this notification."
+
+            // Find an action with RemoteInput (reply-capable)
+            for (action in actions) {
+                val remoteInputs = action.remoteInputs
+                if (remoteInputs != null && remoteInputs.isNotEmpty()) {
+                    val intent = Intent()
+                    val bundle = android.os.Bundle()
+                    for (remoteInput in remoteInputs) {
+                        bundle.putCharSequence(remoteInput.resultKey, text)
+                    }
+                    android.app.RemoteInput.addResultsToIntent(remoteInputs, intent, bundle)
+                    action.actionIntent.send(context, 0, intent)
+                    return@runCatching "Replied to notification from ${target.appName}: \"$text\""
+                }
+            }
+
+            "This notification doesn't support direct reply."
+        }.also { r ->
+            r.onSuccess { logResult("replyToNotification", it) }
+            r.onFailure { logError("replyToNotification", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Screen Time / Usage Stats
+    // ==========================================
+
+    override suspend fun getScreenTime(days: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getScreenTime", "days=$days")
+        runCatching {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
+                return@runCatching "Screen time requires Android 5.1+"
+            }
+
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+                ?: return@runCatching "Usage stats service not available"
+
+            val end = System.currentTimeMillis()
+            val start = end - days * 24L * 60 * 60 * 1000
+
+            val stats = usageStatsManager.queryUsageStats(
+                android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end
+            )
+
+            if (stats.isNullOrEmpty()) {
+                return@runCatching "No usage data available. Please enable Usage Access in Settings > Apps > Special access > Usage access."
+            }
+
+            var totalTime = 0L
+            for (stat in stats) {
+                totalTime += stat.totalTimeInForeground
+            }
+
+            val hours = totalTime / (1000 * 60 * 60)
+            val minutes = (totalTime / (1000 * 60)) % 60
+
+            buildString {
+                appendLine("Screen time (last ${if (days == 1) "24 hours" else "$days days"}):")
+                appendLine("  Total: ${hours}h ${minutes}m")
+
+                // Top apps by usage
+                val topApps = stats
+                    .filter { it.totalTimeInForeground > 60_000 } // > 1 minute
+                    .sortedByDescending { it.totalTimeInForeground }
+                    .take(10)
+
+                if (topApps.isNotEmpty()) {
+                    appendLine("\nTop apps:")
+                    val pm = context.packageManager
+                    for (app in topApps) {
+                        val appName = try {
+                            pm.getApplicationLabel(pm.getApplicationInfo(app.packageName, 0)).toString()
+                        } catch (_: Exception) {
+                            APP_NAMES[app.packageName] ?: app.packageName
+                        }
+                        val appHours = app.totalTimeInForeground / (1000 * 60 * 60)
+                        val appMins = (app.totalTimeInForeground / (1000 * 60)) % 60
+                        appendLine("  - $appName: ${appHours}h ${appMins}m")
+                    }
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getScreenTime", it) }
+            r.onFailure { logError("getScreenTime", it) }
+        }
+    }
+
+    override suspend fun getAppUsageStats(days: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getAppUsageStats", "days=$days")
+        runCatching {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
+                return@runCatching "App usage stats require Android 5.1+"
+            }
+
+            val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+                ?: return@runCatching "Usage stats service not available"
+
+            val end = System.currentTimeMillis()
+            val start = end - days * 24L * 60 * 60 * 1000
+
+            val stats = usageStatsManager.queryUsageStats(
+                android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end
+            )
+
+            if (stats.isNullOrEmpty()) {
+                return@runCatching "No usage data available. Please enable Usage Access in Settings > Apps > Special access > Usage access."
+            }
+
+            // Aggregate by package
+            val aggregated = mutableMapOf<String, Long>()
+            for (stat in stats) {
+                if (stat.totalTimeInForeground > 0) {
+                    aggregated[stat.packageName] = (aggregated[stat.packageName] ?: 0L) + stat.totalTimeInForeground
+                }
+            }
+
+            val sorted = aggregated.entries
+                .filter { it.value > 60_000 } // > 1 minute
+                .sortedByDescending { it.value }
+                .take(20)
+
+            if (sorted.isEmpty()) {
+                return@runCatching "No significant app usage recorded in the last ${if (days == 1) "24 hours" else "$days days"}."
+            }
+
+            val pm = context.packageManager
+            buildString {
+                appendLine("App usage (last ${if (days == 1) "24 hours" else "$days days"}):")
+                for (entry in sorted) {
+                    val appName = try {
+                        pm.getApplicationLabel(pm.getApplicationInfo(entry.key, 0)).toString()
+                    } catch (_: Exception) {
+                        APP_NAMES[entry.key] ?: entry.key
+                    }
+                    val hours = entry.value / (1000 * 60 * 60)
+                    val mins = (entry.value / (1000 * 60)) % 60
+                    appendLine("  - $appName: ${hours}h ${mins}m")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getAppUsageStats", it) }
+            r.onFailure { logError("getAppUsageStats", it) }
+        }
+    }
+
+    override suspend fun getBatteryUsageStats(): Result<String> {
+        logAction("getBatteryUsageStats")
+        return runCatching {
+            val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val batteryIntent = context.registerReceiver(null,
+                android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+
+            buildString {
+                appendLine("Battery Information:")
+
+                val level = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+                val scale = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1) ?: -1
+                if (level >= 0 && scale > 0) {
+                    appendLine("  Level: ${(level * 100) / scale}%")
+                }
+
+                val plugged = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                val chargingSource = when (plugged) {
+                    android.os.BatteryManager.BATTERY_PLUGGED_AC -> "AC"
+                    android.os.BatteryManager.BATTERY_PLUGGED_USB -> "USB"
+                    android.os.BatteryManager.BATTERY_PLUGGED_WIRELESS -> "Wireless"
+                    else -> "Not charging"
+                }
+                appendLine("  Charging: $chargingSource")
+
+                val status = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+                val statusStr = when (status) {
+                    android.os.BatteryManager.BATTERY_STATUS_CHARGING -> "Charging"
+                    android.os.BatteryManager.BATTERY_STATUS_DISCHARGING -> "Discharging"
+                    android.os.BatteryManager.BATTERY_STATUS_FULL -> "Full"
+                    android.os.BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "Not charging"
+                    else -> "Unknown"
+                }
+                appendLine("  Status: $statusStr")
+
+                val health = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_HEALTH, -1) ?: -1
+                val healthStr = when (health) {
+                    android.os.BatteryManager.BATTERY_HEALTH_GOOD -> "Good"
+                    android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> "Overheat"
+                    android.os.BatteryManager.BATTERY_HEALTH_DEAD -> "Dead"
+                    android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "Over voltage"
+                    android.os.BatteryManager.BATTERY_HEALTH_COLD -> "Cold"
+                    else -> "Unknown"
+                }
+                appendLine("  Health: $healthStr")
+
+                val temp = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+                if (temp > 0) {
+                    appendLine("  Temperature: ${temp / 10.0}°C")
+                }
+
+                val voltage = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, -1) ?: -1
+                if (voltage > 0) {
+                    appendLine("  Voltage: ${voltage / 1000.0}V")
+                }
+
+                val technology = batteryIntent?.getStringExtra(android.os.BatteryManager.EXTRA_TECHNOLOGY)
+                if (!technology.isNullOrEmpty()) {
+                    appendLine("  Technology: $technology")
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    val remaining = batteryManager.computeChargeTimeRemaining()
+                    if (remaining > 0) {
+                        val hrs = remaining / (1000 * 60 * 60)
+                        val mins = (remaining / (1000 * 60)) % 60
+                        appendLine("  Time to full: ${hrs}h ${mins}m")
+                    }
+                }
+
+                // Open battery usage settings for detailed per-app usage
+                appendLine("\nFor detailed per-app battery usage, opening battery settings...")
+            }.trim().also {
+                try {
+                    val intent = Intent(Intent.ACTION_POWER_USAGE_SUMMARY).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {
+                    // Not all devices support this intent
+                }
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getBatteryUsageStats", it) }
+            r.onFailure { logError("getBatteryUsageStats", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Accessibility Extended
+    // ==========================================
+
+    override suspend fun setTalkBack(enabled: Boolean): Result<String> {
+        logAction("setTalkBack", "enabled=$enabled")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Accessibility settings. Please ${if (enabled) "enable" else "disable"} TalkBack."
+        }.also { r ->
+            r.onSuccess { logResult("setTalkBack", it) }
+            r.onFailure { logError("setTalkBack", it) }
+        }
+    }
+
+    override suspend fun setDisplaySize(scale: String): Result<String> {
+        logAction("setDisplaySize", "scale=$scale")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_DISPLAY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Display settings. Please adjust the display size to '$scale'."
+        }.also { r ->
+            r.onSuccess { logResult("setDisplaySize", it) }
+            r.onFailure { logError("setDisplaySize", it) }
+        }
+    }
+
+    override suspend fun setHighContrast(enabled: Boolean): Result<String> {
+        logAction("setHighContrast", "enabled=$enabled")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Accessibility settings. Please ${if (enabled) "enable" else "disable"} high contrast text."
+        }.also { r ->
+            r.onSuccess { logResult("setHighContrast", it) }
+            r.onFailure { logError("setHighContrast", it) }
+        }
+    }
+
+    override suspend fun getAccessibilitySettings(): Result<String> {
+        logAction("getAccessibilitySettings")
+        return runCatching {
+            buildString {
+                appendLine("Accessibility Settings:")
+                // Font scale
+                val fontScale = Settings.System.getFloat(
+                    context.contentResolver,
+                    Settings.System.FONT_SCALE,
+                    1.0f
+                )
+                appendLine("  Font scale: $fontScale")
+
+                // Color inversion
+                val colorInversion = try {
+                    Settings.Secure.getInt(
+                        context.contentResolver,
+                        Settings.Secure.ACCESSIBILITY_DISPLAY_INVERSION_ENABLED
+                    ) == 1
+                } catch (_: Exception) { false }
+                appendLine("  Color inversion: ${if (colorInversion) "On" else "Off"}")
+
+                // Magnification
+                val magnification = try {
+                    Settings.Secure.getInt(
+                        context.contentResolver,
+                        "accessibility_display_magnification_enabled"
+                    ) == 1
+                } catch (_: Exception) { false }
+                appendLine("  Magnification: ${if (magnification) "On" else "Off"}")
+
+                // Touch & hold delay
+                val longPressTimeout = Settings.Secure.getInt(
+                    context.contentResolver,
+                    "long_press_timeout",
+                    400
+                )
+                appendLine("  Long press timeout: ${longPressTimeout}ms")
+
+                // High contrast
+                val highContrast = try {
+                    Settings.Secure.getInt(
+                        context.contentResolver,
+                        "high_text_contrast_enabled"
+                    ) == 1
+                } catch (_: Exception) { false }
+                appendLine("  High contrast text: ${if (highContrast) "On" else "Off"}")
+
+                // TalkBack (check enabled accessibility services)
+                val enabledServices = Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: ""
+                val talkBackActive = enabledServices.contains("talkback", ignoreCase = true)
+                appendLine("  TalkBack: ${if (talkBackActive) "On" else "Off"}")
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getAccessibilitySettings", it) }
+            r.onFailure { logError("getAccessibilitySettings", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Ringtone / Sound Management
+    // ==========================================
+
+    override suspend fun setRingtone(uri: String): Result<String> {
+        logAction("setRingtone", "uri=$uri")
+        return runCatching {
+            if (uri.isBlank()) {
+                // Open ringtone picker
+                val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_RINGTONE)
+                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Ringtone")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened ringtone picker. Please select a ringtone."
+            } else {
+                android.media.RingtoneManager.setActualDefaultRingtoneUri(
+                    context,
+                    android.media.RingtoneManager.TYPE_RINGTONE,
+                    Uri.parse(uri)
+                )
+                "Ringtone set successfully."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setRingtone", it) }
+            r.onFailure { logError("setRingtone", it) }
+        }
+    }
+
+    override suspend fun setNotificationSound(uri: String): Result<String> {
+        logAction("setNotificationSound", "uri=$uri")
+        return runCatching {
+            if (uri.isBlank()) {
+                val intent = Intent(android.media.RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TYPE, android.media.RingtoneManager.TYPE_NOTIFICATION)
+                    putExtra(android.media.RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Notification Sound")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened notification sound picker. Please select a sound."
+            } else {
+                android.media.RingtoneManager.setActualDefaultRingtoneUri(
+                    context,
+                    android.media.RingtoneManager.TYPE_NOTIFICATION,
+                    Uri.parse(uri)
+                )
+                "Notification sound set successfully."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setNotificationSound", it) }
+            r.onFailure { logError("setNotificationSound", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Power Management
+    // ==========================================
+
+    override suspend fun schedulePowerOff(hour: Int, minute: Int): Result<String> {
+        logAction("schedulePowerOff", "hour=$hour, minute=$minute")
+        return runCatching {
+            // Schedule power off via alarm intent (requires device admin or OEM support)
+            val intent = Intent(AlarmClock.ACTION_SET_ALARM).apply {
+                putExtra(AlarmClock.EXTRA_HOUR, hour)
+                putExtra(AlarmClock.EXTRA_MINUTES, minute)
+                putExtra(AlarmClock.EXTRA_MESSAGE, "Scheduled Power Off")
+                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Created alarm at %02d:%02d. Note: Android doesn't support automatic power off — this alarm will remind you to shut down.".format(hour, minute)
+        }.also { r ->
+            r.onSuccess { logResult("schedulePowerOff", it) }
+            r.onFailure { logError("schedulePowerOff", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Network Diagnostics
+    // ==========================================
+
+    @SuppressLint("MissingPermission")
+    override suspend fun getSignalStrength(): Result<String> {
+        logAction("getSignalStrength")
+        return runCatching {
+            val telephonyManager = context.getSystemService(Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+                ?: return@runCatching "Telephony service not available"
+
+            buildString {
+                appendLine("Signal Strength:")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    val signalStrength = telephonyManager.signalStrength
+                    if (signalStrength != null) {
+                        appendLine("  Level: ${signalStrength.level}/4")
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                            for (cellSignal in signalStrength.cellSignalStrengths) {
+                                appendLine("  dBm: ${cellSignal.dbm}")
+                                appendLine("  ASU: ${cellSignal.asuLevel}")
+                            }
+                        }
+                    } else {
+                        appendLine("  Unable to read signal strength")
+                    }
+                } else {
+                    appendLine("  Signal strength details require Android 9+")
+                }
+
+                // Wi-Fi signal
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val wifiInfo = wifiManager?.connectionInfo
+                if (wifiInfo != null && wifiInfo.networkId != -1) {
+                    val rssi = wifiInfo.rssi
+                    val wifiLevel = WifiManager.calculateSignalLevel(rssi, 5)
+                    appendLine("  Wi-Fi signal: $wifiLevel/4 (RSSI: ${rssi}dBm)")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getSignalStrength", it) }
+            r.onFailure { logError("getSignalStrength", it) }
+        }
+    }
+
+    override suspend fun getConnectionType(): Result<String> {
+        logAction("getConnectionType")
+        return runCatching {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            buildString {
+                appendLine("Connection Type:")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    val network = cm.activeNetwork
+                    val capabilities = cm.getNetworkCapabilities(network)
+                    if (capabilities != null) {
+                        val types = mutableListOf<String>()
+                        if (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) types.add("Wi-Fi")
+                        if (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR)) types.add("Cellular")
+                        if (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET)) types.add("Ethernet")
+                        if (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_BLUETOOTH)) types.add("Bluetooth")
+                        if (capabilities.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) types.add("VPN")
+                        appendLine("  Active: ${types.joinToString(", ").ifEmpty { "Unknown" }}")
+
+                        val hasInternet = capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        val validated = capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                        appendLine("  Internet: ${if (hasInternet) "Yes" else "No"}")
+                        appendLine("  Validated: ${if (validated) "Yes" else "No"}")
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            val downMbps = capabilities.linkDownstreamBandwidthKbps / 1000
+                            val upMbps = capabilities.linkUpstreamBandwidthKbps / 1000
+                            appendLine("  Estimated speed: ↓${downMbps}Mbps ↑${upMbps}Mbps")
+                        }
+                    } else {
+                        appendLine("  No active network connection")
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    val info = cm.activeNetworkInfo
+                    appendLine("  Type: ${info?.typeName ?: "None"}")
+                    appendLine("  Connected: ${info?.isConnected ?: false}")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getConnectionType", it) }
+            r.onFailure { logError("getConnectionType", it) }
+        }
+    }
+
+    override suspend fun getIpAddress(): Result<String> {
+        logAction("getIpAddress")
+        return runCatching {
+            buildString {
+                appendLine("IP Addresses:")
+
+                // Wi-Fi IP
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                val wifiInfo = wifiManager?.connectionInfo
+                if (wifiInfo != null && wifiInfo.ipAddress != 0) {
+                    val ip = wifiInfo.ipAddress
+                    val ipStr = "${ip and 0xff}.${ip shr 8 and 0xff}.${ip shr 16 and 0xff}.${ip shr 24 and 0xff}"
+                    appendLine("  Wi-Fi: $ipStr")
+                }
+
+                // All network interfaces
+                try {
+                    val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+                    while (interfaces.hasMoreElements()) {
+                        val iface = interfaces.nextElement()
+                        if (!iface.isUp || iface.isLoopback) continue
+                        val addrs = iface.inetAddresses
+                        while (addrs.hasMoreElements()) {
+                            val addr = addrs.nextElement()
+                            if (addr.isLoopbackAddress) continue
+                            val hostAddr = addr.hostAddress ?: continue
+                            if (addr is java.net.Inet4Address) {
+                                appendLine("  ${iface.displayName} (IPv4): $hostAddr")
+                            } else if (addr is java.net.Inet6Address && !hostAddr.startsWith("fe80")) {
+                                appendLine("  ${iface.displayName} (IPv6): $hostAddr")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    appendLine("  Could not enumerate network interfaces: ${e.message}")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("getIpAddress", it) }
+            r.onFailure { logError("getIpAddress", it) }
+        }
+    }
+
+    override suspend fun pingHost(host: String): Result<String> {
+        logAction("pingHost", "host=$host")
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                val sanitizedHost = host.replace(Regex("[^a-zA-Z0-9.\\-]"), "")
+                val process = Runtime.getRuntime().exec(arrayOf("/system/bin/ping", "-c", "4", "-W", "5", sanitizedHost))
+                val output = process.inputStream.bufferedReader().readText()
+                val error = process.errorStream.bufferedReader().readText()
+                process.waitFor()
+
+                if (output.isNotBlank()) {
+                    "Ping $sanitizedHost:\n$output"
+                } else if (error.isNotBlank()) {
+                    "Ping failed: $error"
+                } else {
+                    "Ping to $sanitizedHost: no response"
+                }
+            }.also { r ->
+                r.onSuccess { logResult("pingHost", it) }
+                r.onFailure { logError("pingHost", it) }
+            }
+        }
+    }
+
+    // ==========================================
+    // NEW: Default Apps
+    // ==========================================
+
+    override suspend fun setDefaultBrowser(packageName: String): Result<String> {
+        logAction("setDefaultBrowser", "pkg=$packageName")
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val intent = Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened Default Apps settings. Please set '$packageName' as the default browser."
+            } else {
+                val intent = Intent(Settings.ACTION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened Settings. Please navigate to Apps > Default Apps to change the browser."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setDefaultBrowser", it) }
+            r.onFailure { logError("setDefaultBrowser", it) }
+        }
+    }
+
+    override suspend fun setDefaultLauncher(packageName: String): Result<String> {
+        logAction("setDefaultLauncher", "pkg=$packageName")
+        return runCatching {
+            val intent = Intent(Settings.ACTION_HOME_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Home app settings. Please select '$packageName' as your default launcher."
+        }.also { r ->
+            r.onSuccess { logResult("setDefaultLauncher", it) }
+            r.onFailure { logError("setDefaultLauncher", it) }
+        }
+    }
+
+    // ==========================================
+    // NEW: Focus Modes
+    // ==========================================
+
+    override suspend fun setDrivingMode(enabled: Boolean): Result<String> {
+        logAction("setDrivingMode", "enabled=$enabled")
+        return runCatching {
+            // Try Android Auto / Driving mode / DND with driving rule
+            try {
+                // Try opening Android Auto settings
+                val autoIntent = Intent().apply {
+                    setClassName("com.google.android.projection.gearhead", "com.google.android.apps.auto.Auto")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(autoIntent)
+                "Opened Android Auto. Driving mode ${if (enabled) "activating" else "deactivating"}."
+            } catch (_: Exception) {
+                // Fallback: enable DND as driving mode proxy
+                if (enabled) {
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    if (nm.isNotificationPolicyAccessGranted) {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+                        "Driving mode enabled (Do Not Disturb - Priority only). Calls from favorites will still ring."
+                    } else {
+                        val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                        "Please grant DND access to enable driving mode."
+                    }
+                } else {
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    if (nm.isNotificationPolicyAccessGranted) {
+                        nm.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_ALL)
+                        "Driving mode disabled. All notifications restored."
+                    } else {
+                        "DND access not granted. Cannot disable driving mode."
+                    }
+                }
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setDrivingMode", it) }
+            r.onFailure { logError("setDrivingMode", it) }
+        }
+    }
+
+    // ==========================================
+    // System Diagnostics
+    // ==========================================
+
+    override suspend fun getCpuInfo(): Result<String> {
+        logAction("getCpuInfo")
+        return runCatching {
+            val sb = StringBuilder()
+            // Read /proc/cpuinfo for processor details
+            try {
+                val cpuInfo = java.io.File("/proc/cpuinfo").readText()
+                val cores = Runtime.getRuntime().availableProcessors()
+                sb.appendLine("CPU Cores: $cores")
+                // Extract model name
+                cpuInfo.lines().firstOrNull { it.startsWith("Hardware") || it.startsWith("model name") }?.let {
+                    sb.appendLine(it.trim())
+                }
+                // Extract CPU architecture
+                sb.appendLine("Architecture: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
+            } catch (_: Exception) {
+                sb.appendLine("CPU cores: ${Runtime.getRuntime().availableProcessors()}")
+                sb.appendLine("ABIs: ${Build.SUPPORTED_ABIS.joinToString(", ")}")
+            }
+            // Read /proc/stat for usage
+            try {
+                val stat = java.io.File("/proc/stat").readLines().first()
+                sb.appendLine("CPU stat: $stat")
+            } catch (_: Exception) {}
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getCpuInfo", it) }
+            r.onFailure { logError("getCpuInfo", it) }
+        }
+    }
+
+    override suspend fun getSensorList(): Result<String> {
+        logAction("getSensorList")
+        return runCatching {
+            val sm = context.getSystemService(Context.SENSOR_SERVICE) as android.hardware.SensorManager
+            val sensors = sm.getSensorList(android.hardware.Sensor.TYPE_ALL)
+            val grouped = sensors.groupBy { it.type }
+            val sb = StringBuilder("Sensors (${sensors.size} total):\n")
+            for ((type, list) in grouped) {
+                for (s in list) {
+                    sb.appendLine("• ${s.name} (type=$type, vendor=${s.vendor}, power=${s.power}mA)")
+                }
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getSensorList", it) }
+            r.onFailure { logError("getSensorList", it) }
+        }
+    }
+
+    override suspend fun getThermalInfo(): Result<String> {
+        logAction("getThermalInfo")
+        return runCatching {
+            val sb = StringBuilder("Thermal Info:\n")
+            // Read thermal zones
+            val thermalDir = java.io.File("/sys/class/thermal/")
+            if (thermalDir.exists()) {
+                thermalDir.listFiles()?.filter { it.name.startsWith("thermal_zone") }?.forEach { zone ->
+                    try {
+                        val temp = java.io.File(zone, "temp").readText().trim().toLongOrNull()
+                        val type = java.io.File(zone, "type").readText().trim()
+                        val tempC = if (temp != null && temp > 1000) temp / 1000.0 else temp?.toDouble()
+                        sb.appendLine("• $type: ${tempC}°C")
+                    } catch (_: Exception) {}
+                }
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                val thermal = pm.currentThermalStatus
+                val statusName = when (thermal) {
+                    0 -> "None"
+                    1 -> "Light"
+                    2 -> "Moderate"
+                    3 -> "Severe"
+                    4 -> "Critical"
+                    5 -> "Emergency"
+                    6 -> "Shutdown"
+                    else -> "Unknown"
+                }
+                sb.appendLine("Thermal status: $statusName")
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getThermalInfo", it) }
+            r.onFailure { logError("getThermalInfo", it) }
+        }
+    }
+
+    override suspend fun getProcessList(): Result<String> {
+        logAction("getProcessList")
+        return runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val runningApps = am.runningAppProcesses ?: emptyList()
+            val sb = StringBuilder("Running processes (${runningApps.size}):\n")
+            for (proc in runningApps.take(30)) {
+                val importance = when (proc.importance) {
+                    android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "Foreground"
+                    android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "Visible"
+                    android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "Service"
+                    android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "Cached"
+                    else -> "Background"
+                }
+                sb.appendLine("• ${proc.processName} ($importance, pid=${proc.pid})")
+            }
+            if (runningApps.size > 30) sb.appendLine("... and ${runningApps.size - 30} more")
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getProcessList", it) }
+            r.onFailure { logError("getProcessList", it) }
+        }
+    }
+
+    override suspend fun getStorageBreakdown(): Result<String> {
+        logAction("getStorageBreakdown")
+        return runCatching {
+            val stat = android.os.StatFs(android.os.Environment.getDataDirectory().path)
+            val total = stat.totalBytes
+            val free = stat.availableBytes
+            val used = total - free
+            val sb = StringBuilder("Storage Breakdown:\n")
+            sb.appendLine("Total: ${formatFileSize(total)}")
+            sb.appendLine("Used: ${formatFileSize(used)} (${(used * 100 / total)}%)")
+            sb.appendLine("Free: ${formatFileSize(free)}")
+
+            // Check common directories
+            val dirs = mapOf(
+                "DCIM" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM),
+                "Downloads" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+                "Music" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC),
+                "Movies" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+                "Pictures" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES)
+            )
+            sb.appendLine("\nDirectory sizes:")
+            for ((name, dir) in dirs) {
+                if (dir.exists()) {
+                    val size = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+                    sb.appendLine("• $name: ${formatFileSize(size)}")
+                }
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getStorageBreakdown", it) }
+            r.onFailure { logError("getStorageBreakdown", it) }
+        }
+    }
+
+    // ==========================================
+    // Text-to-Speech Enhanced
+    // ==========================================
+
+    override suspend fun ttsSpeak(text: String, language: String, speed: Float, pitch: Float): Result<String> {
+        logAction("ttsSpeak", "text=${text.take(50)}, lang=$language, speed=$speed, pitch=$pitch")
+        return runCatching {
+            suspendCancellableCoroutine<String> { cont ->
+                val tts = android.speech.tts.TextToSpeech(context) { status ->
+                    if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                        val engine = (context.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)
+                        // This is the TTS object created in callback
+                    }
+                }
+                // Use a handler to allow TTS to init
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        if (language.isNotEmpty()) {
+                            val locale = java.util.Locale.forLanguageTag(language)
+                            tts.language = locale
+                        }
+                        tts.setSpeechRate(speed)
+                        tts.setPitch(pitch)
+                        tts.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "claw_tts")
+                        if (cont.isActive) cont.resume("Speaking: \"${text.take(100)}\" (lang=$language, speed=$speed, pitch=$pitch)")
+                    } catch (e: Exception) {
+                        if (cont.isActive) cont.resume("TTS error: ${e.message}")
+                    }
+                }, 500)
+            }
+        }.also { r ->
+            r.onSuccess { logResult("ttsSpeak", it) }
+            r.onFailure { logError("ttsSpeak", it) }
+        }
+    }
+
+    override suspend fun ttsStop(): Result<String> {
+        logAction("ttsStop")
+        return runCatching {
+            // Stop any active TTS by creating a temporary instance and stopping
+            val tts = android.speech.tts.TextToSpeech(context) { }
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                tts.stop()
+                tts.shutdown()
+            }, 200)
+            "Text-to-speech stopped."
+        }.also { r ->
+            r.onSuccess { logResult("ttsStop", it) }
+            r.onFailure { logError("ttsStop", it) }
+        }
+    }
+
+    override suspend fun ttsGetVoices(): Result<String> {
+        logAction("ttsGetVoices")
+        return runCatching {
+            suspendCancellableCoroutine<String> { cont ->
+                val tts = android.speech.tts.TextToSpeech(context) { status ->
+                    if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                        // handled in delayed block
+                    }
+                }
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    try {
+                        val voices = tts.voices ?: emptySet()
+                        val sb = StringBuilder("Available TTS voices (${voices.size}):\n")
+                        for (voice in voices.take(30)) {
+                            sb.appendLine("• ${voice.name} (${voice.locale}, quality=${voice.quality})")
+                        }
+                        if (voices.size > 30) sb.appendLine("... and ${voices.size - 30} more")
+                        tts.shutdown()
+                        if (cont.isActive) cont.resume(sb.toString().trim())
+                    } catch (e: Exception) {
+                        tts.shutdown()
+                        if (cont.isActive) cont.resume("Failed to get voices: ${e.message}")
+                    }
+                }, 1000)
+            }
+        }.also { r ->
+            r.onSuccess { logResult("ttsGetVoices", it) }
+            r.onFailure { logError("ttsGetVoices", it) }
+        }
+    }
+
+    // ==========================================
+    // DND Granular
+    // ==========================================
+
+    override suspend fun setDndMode(mode: String): Result<String> {
+        logAction("setDndMode", "mode=$mode")
+        return runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            if (!nm.isNotificationPolicyAccessGranted) {
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                return@runCatching "Please grant DND access permission first."
+            }
+            val filter = when (mode.lowercase()) {
+                "priority_only", "priority" -> NotificationManager.INTERRUPTION_FILTER_PRIORITY
+                "alarms_only", "alarms" -> NotificationManager.INTERRUPTION_FILTER_ALARMS
+                "total_silence", "silence", "none" -> NotificationManager.INTERRUPTION_FILTER_NONE
+                "off", "all" -> NotificationManager.INTERRUPTION_FILTER_ALL
+                else -> return@runCatching "Unknown DND mode: $mode. Use: priority_only, alarms_only, total_silence, off"
+            }
+            nm.setInterruptionFilter(filter)
+            if (filter == NotificationManager.INTERRUPTION_FILTER_ALL) {
+                "Do Not Disturb turned OFF. All notifications enabled."
+            } else {
+                "Do Not Disturb set to: $mode"
+            }
+        }.also { r ->
+            r.onSuccess { logResult("setDndMode", it) }
+            r.onFailure { logError("setDndMode", it) }
+        }
+    }
+
+    override suspend fun getDndStatus(): Result<String> {
+        logAction("getDndStatus")
+        return runCatching {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val filter = nm.currentInterruptionFilter
+            val status = when (filter) {
+                NotificationManager.INTERRUPTION_FILTER_ALL -> "Off (all notifications allowed)"
+                NotificationManager.INTERRUPTION_FILTER_PRIORITY -> "Priority only"
+                NotificationManager.INTERRUPTION_FILTER_ALARMS -> "Alarms only"
+                NotificationManager.INTERRUPTION_FILTER_NONE -> "Total silence"
+                else -> "Unknown ($filter)"
+            }
+            val policyAccess = nm.isNotificationPolicyAccessGranted
+            "DND Status: $status\nPolicy access granted: $policyAccess"
+        }.also { r ->
+            r.onSuccess { logResult("getDndStatus", it) }
+            r.onFailure { logError("getDndStatus", it) }
+        }
+    }
+
+    // ==========================================
+    // Wi-Fi Management
+    // ==========================================
+
+    @SuppressLint("MissingPermission")
+    override suspend fun scanWifiNetworks(): Result<String> {
+        logAction("scanWifiNetworks")
+        return runCatching {
+            val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+            if (!wm.isWifiEnabled) {
+                return@runCatching "Wi-Fi is disabled. Enable it first."
+            }
+            @Suppress("DEPRECATION")
+            val results = wm.scanResults ?: emptyList()
+            val sb = StringBuilder("Wi-Fi Networks (${results.size}):\n")
+            for (r in results.sortedByDescending { it.level }.take(20)) {
+                val bars = WifiManager.calculateSignalLevel(r.level, 5)
+                @Suppress("DEPRECATION")
+                sb.appendLine("• ${r.SSID.ifEmpty { "(hidden)" }} (signal: $bars/4, ${r.frequency}MHz)")
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("scanWifiNetworks", it) }
+            r.onFailure { logError("scanWifiNetworks", it) }
+        }
+    }
+
+    override suspend fun connectToWifi(ssid: String): Result<String> {
+        logAction("connectToWifi", "ssid=$ssid")
+        return runCatching {
+            // For security, we do NOT accept passwords through the bridge
+            // Instead, open Wi-Fi settings panel for user to connect
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val intent = Intent(Settings.Panel.ACTION_WIFI).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened Wi-Fi panel. Please select '$ssid' and enter the password."
+            } else {
+                val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened Wi-Fi settings. Please connect to '$ssid' manually."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("connectToWifi", it) }
+            r.onFailure { logError("connectToWifi", it) }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override suspend fun getSavedWifiNetworks(): Result<String> {
+        logAction("getSavedWifiNetworks")
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // On Android 10+, apps can't access saved networks list
+                "Saved Wi-Fi networks are not accessible on Android 10+. Opening Wi-Fi settings."
+                    .also {
+                        val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(intent)
+                    }
+            } else {
+                val wm = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                @Suppress("DEPRECATION")
+                val configs = wm.configuredNetworks ?: emptyList()
+                val sb = StringBuilder("Saved Wi-Fi Networks (${configs.size}):\n")
+                for (c in configs) {
+                    @Suppress("DEPRECATION")
+                    sb.appendLine("• ${c.SSID}")
+                }
+                sb.toString().trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getSavedWifiNetworks", it) }
+            r.onFailure { logError("getSavedWifiNetworks", it) }
+        }
+    }
+
+    override suspend fun forgetWifiNetwork(ssid: String): Result<String> {
+        logAction("forgetWifiNetwork", "ssid=$ssid")
+        return runCatching {
+            // Cannot programmatically forget networks on modern Android
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Wi-Fi settings. Please long-press '$ssid' and select 'Forget' to remove it."
+        }.also { r ->
+            r.onSuccess { logResult("forgetWifiNetwork", it) }
+            r.onFailure { logError("forgetWifiNetwork", it) }
+        }
+    }
+
+    // ==========================================
+    // Bluetooth Management
+    // ==========================================
+
+    @SuppressLint("MissingPermission")
+    override suspend fun connectBluetoothDevice(address: String): Result<String> {
+        logAction("connectBluetoothDevice", "address=$address")
+        return runCatching {
+            val ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                ?: return@runCatching "Bluetooth not available on this device."
+            if (!ba.isEnabled) return@runCatching "Bluetooth is disabled. Enable it first."
+
+            val device = ba.getRemoteDevice(address)
+            val name = device.name ?: address
+            // Open Bluetooth settings for user to connect
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Bluetooth settings. Please connect to '$name' ($address)."
+        }.also { r ->
+            r.onSuccess { logResult("connectBluetoothDevice", it) }
+            r.onFailure { logError("connectBluetoothDevice", it) }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override suspend fun disconnectBluetoothDevice(address: String): Result<String> {
+        logAction("disconnectBluetoothDevice", "address=$address")
+        return runCatching {
+            val ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                ?: return@runCatching "Bluetooth not available."
+            val device = ba.getRemoteDevice(address)
+            val name = device.name ?: address
+            // Use reflection to disconnect (no public API)
+            try {
+                val method = device.javaClass.getMethod("removeBond")
+                method.invoke(device)
+                "Disconnecting from '$name'. The device will be unpaired."
+            } catch (_: Exception) {
+                val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                "Opened Bluetooth settings. Please disconnect '$name' manually."
+            }
+        }.also { r ->
+            r.onSuccess { logResult("disconnectBluetoothDevice", it) }
+            r.onFailure { logError("disconnectBluetoothDevice", it) }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override suspend fun pairBluetoothDevice(): Result<String> {
+        logAction("pairBluetoothDevice")
+        return runCatching {
+            val ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                ?: return@runCatching "Bluetooth not available."
+            if (!ba.isEnabled) {
+                return@runCatching "Bluetooth is disabled. Enable it first."
+            }
+            // Start discovery / open pairing UI
+            val intent = Intent(Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Bluetooth settings. Device is ready for pairing."
+        }.also { r ->
+            r.onSuccess { logResult("pairBluetoothDevice", it) }
+            r.onFailure { logError("pairBluetoothDevice", it) }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    override suspend fun getBluetoothPairedDevices(): Result<String> {
+        logAction("getBluetoothPairedDevices")
+        return runCatching {
+            val ba = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+                ?: return@runCatching "Bluetooth not available."
+            if (!ba.isEnabled) return@runCatching "Bluetooth is disabled."
+            val bonded = ba.bondedDevices ?: emptySet()
+            val sb = StringBuilder("Paired Bluetooth devices (${bonded.size}):\n")
+            for (d in bonded) {
+                val type = when (d.type) {
+                    android.bluetooth.BluetoothDevice.DEVICE_TYPE_CLASSIC -> "Classic"
+                    android.bluetooth.BluetoothDevice.DEVICE_TYPE_LE -> "BLE"
+                    android.bluetooth.BluetoothDevice.DEVICE_TYPE_DUAL -> "Dual"
+                    else -> "Unknown"
+                }
+                sb.appendLine("• ${d.name ?: "(unnamed)"} [${d.address}] ($type)")
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getBluetoothPairedDevices", it) }
+            r.onFailure { logError("getBluetoothPairedDevices", it) }
+        }
+    }
+
+    // ==========================================
+    // Navigation Enhanced
+    // ==========================================
+
+    override suspend fun searchPlaces(query: String): Result<String> {
+        logAction("searchPlaces", "query=$query")
+        return runCatching {
+            val encodedQuery = Uri.encode(query)
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$encodedQuery")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                trySetPackage("com.google.android.apps.maps")
+            }
+            context.startActivity(intent)
+            "Searching for '$query' in Maps."
+        }.also { r ->
+            r.onSuccess { logResult("searchPlaces", it) }
+            r.onFailure { logError("searchPlaces", it) }
+        }
+    }
+
+    override suspend fun getDirections(from: String, to: String, mode: String): Result<String> {
+        logAction("getDirections", "from=$from, to=$to, mode=$mode")
+        return runCatching {
+            val modeParam = when (mode.lowercase()) {
+                "driving", "d" -> "d"
+                "walking", "w" -> "w"
+                "bicycling", "b" -> "b"
+                "transit", "t", "r" -> "r"
+                else -> "d"
+            }
+            val encodedFrom = Uri.encode(from)
+            val encodedTo = Uri.encode(to)
+            val uri = "https://www.google.com/maps/dir/?api=1&origin=$encodedFrom&destination=$encodedTo&travelmode=${
+                when (modeParam) { "d" -> "driving"; "w" -> "walking"; "b" -> "bicycling"; "r" -> "transit"; else -> "driving" }
+            }"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                trySetPackage("com.google.android.apps.maps")
+            }
+            context.startActivity(intent)
+            "Getting directions from '$from' to '$to' ($mode)."
+        }.also { r ->
+            r.onSuccess { logResult("getDirections", it) }
+            r.onFailure { logError("getDirections", it) }
+        }
+    }
+
+    override suspend fun openStreetView(latitude: Double, longitude: Double): Result<String> {
+        logAction("openStreetView", "lat=$latitude, lon=$longitude")
+        return runCatching {
+            val uri = Uri.parse("google.streetview:cbll=$latitude,$longitude")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                trySetPackage("com.google.android.apps.maps")
+            }
+            context.startActivity(intent)
+            "Opening Street View at ($latitude, $longitude)."
+        }.also { r ->
+            r.onSuccess { logResult("openStreetView", it) }
+            r.onFailure { logError("openStreetView", it) }
+        }
+    }
+
+    override suspend fun getNearbyPlaces(type: String, radius: Int): Result<String> {
+        logAction("getNearbyPlaces", "type=$type, radius=$radius")
+        return runCatching {
+            val encodedType = Uri.encode(type)
+            // Use geo: URI with query for nearby search
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$encodedType+nearby")).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                trySetPackage("com.google.android.apps.maps")
+            }
+            context.startActivity(intent)
+            "Searching for $type within ${radius}m nearby."
+        }.also { r ->
+            r.onSuccess { logResult("getNearbyPlaces", it) }
+            r.onFailure { logError("getNearbyPlaces", it) }
+        }
+    }
+
+    // ==========================================
+    // Audio Profiles
+    // ==========================================
+
+    override suspend fun saveAudioProfile(name: String): Result<String> {
+        logAction("saveAudioProfile", "name=$name")
+        return runCatching {
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val prefs = context.getSharedPreferences("audio_profiles", Context.MODE_PRIVATE)
+            val profile = buildString {
+                append("media=${am.getStreamVolume(AudioManager.STREAM_MUSIC)},")
+                append("ring=${am.getStreamVolume(AudioManager.STREAM_RING)},")
+                append("alarm=${am.getStreamVolume(AudioManager.STREAM_ALARM)},")
+                append("notification=${am.getStreamVolume(AudioManager.STREAM_NOTIFICATION)},")
+                append("ringer_mode=${am.ringerMode}")
+            }
+            prefs.edit().putString("profile_$name", profile).apply()
+            "Audio profile '$name' saved: $profile"
+        }.also { r ->
+            r.onSuccess { logResult("saveAudioProfile", it) }
+            r.onFailure { logError("saveAudioProfile", it) }
+        }
+    }
+
+    override suspend fun loadAudioProfile(name: String): Result<String> {
+        logAction("loadAudioProfile", "name=$name")
+        return runCatching {
+            val prefs = context.getSharedPreferences("audio_profiles", Context.MODE_PRIVATE)
+            val profile = prefs.getString("profile_$name", null)
+                ?: return@runCatching "Audio profile '$name' not found."
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val values = profile.split(",").associate {
+                val (k, v) = it.split("=")
+                k to v.toInt()
+            }
+            values["media"]?.let { am.setStreamVolume(AudioManager.STREAM_MUSIC, it, 0) }
+            values["ring"]?.let { am.setStreamVolume(AudioManager.STREAM_RING, it, 0) }
+            values["alarm"]?.let { am.setStreamVolume(AudioManager.STREAM_ALARM, it, 0) }
+            values["notification"]?.let { am.setStreamVolume(AudioManager.STREAM_NOTIFICATION, it, 0) }
+            values["ringer_mode"]?.let { am.ringerMode = it }
+            "Audio profile '$name' loaded: $profile"
+        }.also { r ->
+            r.onSuccess { logResult("loadAudioProfile", it) }
+            r.onFailure { logError("loadAudioProfile", it) }
+        }
+    }
+
+    override suspend fun listAudioProfiles(): Result<String> {
+        logAction("listAudioProfiles")
+        return runCatching {
+            val prefs = context.getSharedPreferences("audio_profiles", Context.MODE_PRIVATE)
+            val profiles = prefs.all.filter { it.key.startsWith("profile_") }
+            if (profiles.isEmpty()) return@runCatching "No saved audio profiles."
+            val sb = StringBuilder("Audio profiles (${profiles.size}):\n")
+            for ((key, value) in profiles) {
+                val name = key.removePrefix("profile_")
+                sb.appendLine("• $name: $value")
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("listAudioProfiles", it) }
+            r.onFailure { logError("listAudioProfiles", it) }
+        }
+    }
+
+    override suspend fun deleteAudioProfile(name: String): Result<String> {
+        logAction("deleteAudioProfile", "name=$name")
+        return runCatching {
+            val prefs = context.getSharedPreferences("audio_profiles", Context.MODE_PRIVATE)
+            if (!prefs.contains("profile_$name")) {
+                return@runCatching "Audio profile '$name' not found."
+            }
+            prefs.edit().remove("profile_$name").apply()
+            "Audio profile '$name' deleted."
+        }.also { r ->
+            r.onSuccess { logResult("deleteAudioProfile", it) }
+            r.onFailure { logError("deleteAudioProfile", it) }
+        }
+    }
+
+    // ==========================================
+    // Shortcuts
+    // ==========================================
+
+    override suspend fun createHomeShortcut(name: String, uri: String): Result<String> {
+        logAction("createHomeShortcut", "name=$name, uri=$uri")
+        return runCatching {
+            val shortcutManager = context.getSystemService(Context.SHORTCUT_SERVICE) as android.content.pm.ShortcutManager
+            if (!shortcutManager.isRequestPinShortcutSupported) {
+                return@runCatching "Pin shortcuts are not supported on this device/launcher."
+            }
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(uri)).apply {
+                setPackage(context.packageName)
+            }
+            val shortcutInfo = android.content.pm.ShortcutInfo.Builder(context, "shortcut_${name.lowercase().replace(" ", "_")}")
+                .setShortLabel(name)
+                .setLongLabel(name)
+                .setIntent(intent)
+                .setIcon(android.graphics.drawable.Icon.createWithResource(context, android.R.drawable.ic_menu_compass))
+                .build()
+            shortcutManager.requestPinShortcut(shortcutInfo, null)
+            "Requesting to pin shortcut '$name' → $uri to home screen."
+        }.also { r ->
+            r.onSuccess { logResult("createHomeShortcut", it) }
+            r.onFailure { logError("createHomeShortcut", it) }
+        }
+    }
+
+    override suspend fun pinAppShortcut(packageName: String): Result<String> {
+        logAction("pinAppShortcut", "package=$packageName")
+        return runCatching {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                ?: return@runCatching "App '$packageName' not found or has no launcher activity."
+            val shortcutManager = context.getSystemService(Context.SHORTCUT_SERVICE) as android.content.pm.ShortcutManager
+            if (!shortcutManager.isRequestPinShortcutSupported) {
+                return@runCatching "Pin shortcuts not supported."
+            }
+            val appName = try {
+                val appInfo = context.packageManager.getApplicationInfo(packageName, 0)
+                context.packageManager.getApplicationLabel(appInfo).toString()
+            } catch (_: Exception) { packageName }
+
+            val shortcutInfo = android.content.pm.ShortcutInfo.Builder(context, "app_$packageName")
+                .setShortLabel(appName)
+                .setLongLabel(appName)
+                .setIntent(launchIntent.apply { action = Intent.ACTION_MAIN })
+                .setIcon(android.graphics.drawable.Icon.createWithAdaptiveBitmap(
+                    android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+                ))
+                .build()
+            shortcutManager.requestPinShortcut(shortcutInfo, null)
+            "Requesting to pin '$appName' shortcut to home screen."
+        }.also { r ->
+            r.onSuccess { logResult("pinAppShortcut", it) }
+            r.onFailure { logError("pinAppShortcut", it) }
+        }
+    }
+
+    // ==========================================
+    // Document Scanner
+    // ==========================================
+
+    override suspend fun openDocumentScanner(): Result<String> {
+        logAction("openDocumentScanner")
+        return runCatching {
+            // Try Google Drive document scanner first
+            try {
+                val intent = Intent().apply {
+                    setClassName("com.google.android.apps.docs", "com.google.android.apps.docs.app.NewDocIntentHandler")
+                    action = "android.media.action.IMAGE_CAPTURE"
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                return@runCatching "Opened Google Drive document scanner."
+            } catch (_: Exception) {}
+            // Try the generic camera scanner
+            try {
+                val intent = Intent("com.google.android.apps.docs.SCAN").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                return@runCatching "Opened document scanner."
+            } catch (_: Exception) {}
+            // Fallback: open camera
+            val intent = Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened camera for document scanning. Consider installing Google Drive for better scanning."
+        }.also { r ->
+            r.onSuccess { logResult("openDocumentScanner", it) }
+            r.onFailure { logError("openDocumentScanner", it) }
+        }
+    }
+
+    // ==========================================
+    // Cast / Screen Mirror Enhanced
+    // ==========================================
+
+    override suspend fun discoverCastDevices(): Result<String> {
+        logAction("discoverCastDevices")
+        return runCatching {
+            // Open cast / media route settings
+            val intent = Intent(Settings.ACTION_CAST_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened Cast settings. Available cast devices will be shown."
+        }.also { r ->
+            r.onSuccess { logResult("discoverCastDevices", it) }
+            r.onFailure { logError("discoverCastDevices", it) }
+        }
+    }
+
+    override suspend fun castMedia(url: String): Result<String> {
+        logAction("castMedia", "url=${url.take(80)}")
+        return runCatching {
+            // Open the URL and let user cast from the app
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opening media: $url. Use the cast button in the media player to cast to a device."
+        }.also { r ->
+            r.onSuccess { logResult("castMedia", it) }
+            r.onFailure { logError("castMedia", it) }
+        }
+    }
+
+    // ==========================================
+    // Reminders Enhanced
+    // ==========================================
+
+    override suspend fun completeReminder(id: String): Result<String> {
+        logAction("completeReminder", "id=$id")
+        return runCatching {
+            // Try to mark reminder complete via CalendarContract
+            try {
+                val uri = ContentUris.withAppendedId(
+                    android.provider.CalendarContract.Reminders.CONTENT_URI,
+                    id.toLong()
+                )
+                val values = ContentValues().apply {
+                    put(android.provider.CalendarContract.Reminders.MINUTES, 0)
+                }
+                context.contentResolver.update(uri, values, null, null)
+                "Reminder $id marked as complete."
+            } catch (_: Exception) {
+                // Fallback: open calendar app
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse("content://com.android.calendar/events/$id")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                try {
+                    context.startActivity(intent)
+                    "Opened reminder $id in calendar. Please mark it as complete."
+                } catch (_: Exception) {
+                    "Could not find reminder with ID $id."
+                }
+            }
+        }.also { r ->
+            r.onSuccess { logResult("completeReminder", it) }
+            r.onFailure { logError("completeReminder", it) }
+        }
+    }
+
+    // ==========================================
+    // App Management
+    // ==========================================
+
+    override suspend fun getAppPermissions(packageName: String): Result<String> {
+        logAction("getAppPermissions", "packageName=$packageName")
+        return runCatching {
+            val pi = context.packageManager.getPackageInfo(packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
+            val perms = pi.requestedPermissions
+            if (perms.isNullOrEmpty()) {
+                "App $packageName has no requested permissions."
+            } else {
+                val granted = pi.requestedPermissionsFlags
+                val sb = StringBuilder("Permissions for $packageName (${perms.size} total):\n")
+                for (i in perms.indices) {
+                    val isGranted = if (granted != null && i < granted.size) {
+                        (granted[i] and android.content.pm.PackageInfo.REQUESTED_PERMISSION_GRANTED) != 0
+                    } else false
+                    val status = if (isGranted) "GRANTED" else "DENIED"
+                    val shortName = perms[i].substringAfterLast('.')
+                    sb.appendLine("  [$status] $shortName")
+                }
+                sb.toString().trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getAppPermissions", it) }
+            r.onFailure { logError("getAppPermissions", it) }
+        }
+    }
+
+    override suspend fun getAppStorageInfo(packageName: String): Result<String> {
+        logAction("getAppStorageInfo", "packageName=$packageName")
+        return runCatching {
+            val ai = context.packageManager.getApplicationInfo(packageName, 0)
+            val appName = context.packageManager.getApplicationLabel(ai).toString()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val ssm = context.getSystemService(android.content.Context.STORAGE_STATS_SERVICE) as android.app.usage.StorageStatsManager
+                val uuid = ai.storageUuid
+                val stats = ssm.queryStatsForPackage(uuid, packageName, android.os.Process.myUserHandle())
+                val appBytes = stats.appBytes
+                val dataBytes = stats.dataBytes
+                val cacheBytes = stats.cacheBytes
+                fun fmt(b: Long): String {
+                    return when {
+                        b >= 1_073_741_824 -> "%.1f GB".format(b / 1_073_741_824.0)
+                        b >= 1_048_576 -> "%.1f MB".format(b / 1_048_576.0)
+                        b >= 1024 -> "%.1f KB".format(b / 1024.0)
+                        else -> "$b B"
+                    }
+                }
+                """Storage info for $appName ($packageName):
+  App size: ${fmt(appBytes)}
+  Data: ${fmt(dataBytes)}
+  Cache: ${fmt(cacheBytes)}
+  Total: ${fmt(appBytes + dataBytes + cacheBytes)}""".trimIndent()
+            } else {
+                val sourceDir = ai.sourceDir
+                val dataDir = ai.dataDir
+                val sourceSize = java.io.File(sourceDir).length()
+                "Storage info for $appName ($packageName):\n  APK: ${sourceSize / 1_048_576}MB\n  Data dir: $dataDir"
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getAppStorageInfo", it) }
+            r.onFailure { logError("getAppStorageInfo", it) }
+        }
+    }
+
+    override suspend fun clearAppCache(packageName: String): Result<String> {
+        logAction("clearAppCache", "packageName=$packageName")
+        return runCatching {
+            // Cannot clear cache programmatically on modern Android — open app info instead
+            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$packageName")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            "Opened app info for $packageName. Tap 'Storage' → 'Clear Cache' to clear the cache."
+        }.also { r ->
+            r.onSuccess { logResult("clearAppCache", it) }
+            r.onFailure { logError("clearAppCache", it) }
+        }
+    }
+
+    override suspend fun getAppNotificationSettings(packageName: String): Result<String> {
+        logAction("getAppNotificationSettings", "packageName=$packageName")
+        return runCatching {
+            val nm = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            val appName = try {
+                context.packageManager.getApplicationLabel(
+                    context.packageManager.getApplicationInfo(packageName, 0)
+                ).toString()
+            } catch (_: Exception) { packageName }
+            val enabled = nm.areNotificationsEnabled()
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channels = nm.notificationChannels
+                val sb = StringBuilder("Notification settings for $appName:\n  Notifications enabled: $enabled\n")
+                if (channels.isNotEmpty()) {
+                    sb.appendLine("  Channels (${channels.size}):")
+                    for (ch in channels) {
+                        val importance = when (ch.importance) {
+                            android.app.NotificationManager.IMPORTANCE_NONE -> "NONE"
+                            android.app.NotificationManager.IMPORTANCE_MIN -> "MIN"
+                            android.app.NotificationManager.IMPORTANCE_LOW -> "LOW"
+                            android.app.NotificationManager.IMPORTANCE_DEFAULT -> "DEFAULT"
+                            android.app.NotificationManager.IMPORTANCE_HIGH -> "HIGH"
+                            android.app.NotificationManager.IMPORTANCE_MAX -> "MAX"
+                            else -> "UNKNOWN"
+                        }
+                        sb.appendLine("    - ${ch.name} (${ch.id}): $importance, sound=${ch.sound != null}, vibrate=${ch.shouldVibrate()}")
+                    }
+                }
+                sb.toString().trim()
+            } else {
+                "Notification settings for $appName: enabled=$enabled"
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getAppNotificationSettings", it) }
+            r.onFailure { logError("getAppNotificationSettings", it) }
+        }
+    }
+
+    override suspend fun getAppBatteryUsage(): Result<String> {
+        logAction("getAppBatteryUsage", "")
+        return runCatching {
+            val pm = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+            val bm = context.getSystemService(android.content.Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val level = bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            val charging = bm.isCharging
+            val sb = StringBuilder("Battery status: ${level}%${if (charging) " (charging)" else ""}\n\n")
+
+            // Show apps with battery optimization status
+            val packages = context.packageManager.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                .filter { (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0 }
+                .take(25)
+            sb.appendLine("Battery optimization status (top user apps):")
+            for (ai in packages) {
+                val name = context.packageManager.getApplicationLabel(ai).toString()
+                val ignored = pm.isIgnoringBatteryOptimizations(ai.packageName)
+                sb.appendLine("  $name: ${if (ignored) "Unrestricted" else "Optimized"}")
+            }
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getAppBatteryUsage", it) }
+            r.onFailure { logError("getAppBatteryUsage", it) }
+        }
+    }
+
+    override suspend fun getDefaultApps(): Result<String> {
+        logAction("getDefaultApps", "")
+        return runCatching {
+            val pm = context.packageManager
+            val sb = StringBuilder("Default app handlers:\n")
+
+            // Browser
+            val browserIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com"))
+            val browser = pm.resolveActivity(browserIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Browser: ${browser?.activityInfo?.packageName ?: "None"}")
+
+            // SMS
+            val smsPackage = android.provider.Telephony.Sms.getDefaultSmsPackage(context)
+            sb.appendLine("  SMS: ${smsPackage ?: "None"}")
+
+            // Phone / Dialer
+            val dialIntent = android.content.Intent(android.content.Intent.ACTION_DIAL)
+            val dialer = pm.resolveActivity(dialIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Phone: ${dialer?.activityInfo?.packageName ?: "None"}")
+
+            // Camera
+            val cameraIntent = android.content.Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE)
+            val camera = pm.resolveActivity(cameraIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Camera: ${camera?.activityInfo?.packageName ?: "None"}")
+
+            // Launcher
+            val launcherIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME)
+            val launcher = pm.resolveActivity(launcherIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Launcher: ${launcher?.activityInfo?.packageName ?: "None"}")
+
+            // Email
+            val emailIntent = android.content.Intent(android.content.Intent.ACTION_SENDTO, android.net.Uri.parse("mailto:"))
+            val email = pm.resolveActivity(emailIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Email: ${email?.activityInfo?.packageName ?: "None"}")
+
+            // Music
+            val musicIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply { type = "audio/*" }
+            val music = pm.resolveActivity(musicIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Music: ${music?.activityInfo?.packageName ?: "None"}")
+
+            // Maps
+            val mapIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("geo:0,0"))
+            val maps = pm.resolveActivity(mapIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+            sb.appendLine("  Maps: ${maps?.activityInfo?.packageName ?: "None"}")
+
+            sb.toString().trim()
+        }.also { r ->
+            r.onSuccess { logResult("getDefaultApps", it) }
+            r.onFailure { logError("getDefaultApps", it) }
+        }
+    }
+
+    override suspend fun setDefaultApp(role: String, packageName: String): Result<String> {
+        logAction("setDefaultApp", "role=$role, packageName=$packageName")
+        return runCatching {
+            // Open the default apps settings — cannot set programmatically
+            val intent = when (role.lowercase()) {
+                "browser" -> android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                "sms" -> {
+                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                        android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                    } else {
+                        android.content.Intent(android.provider.Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT).apply {
+                            putExtra(android.provider.Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                        }
+                    }
+                }
+                "home", "launcher" -> android.content.Intent(android.provider.Settings.ACTION_HOME_SETTINGS)
+                else -> android.content.Intent(android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+            }
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            "Opened default apps settings for '$role'. Please select $packageName as default."
+        }.also { r ->
+            r.onSuccess { logResult("setDefaultApp", it) }
+            r.onFailure { logError("setDefaultApp", it) }
+        }
+    }
+
+    override suspend fun getRecentlyInstalledApps(days: Int): Result<String> {
+        logAction("getRecentlyInstalledApps", "days=$days")
+        return runCatching {
+            val cutoff = System.currentTimeMillis() - (days.toLong() * 24 * 60 * 60 * 1000)
+            val apps = context.packageManager.getInstalledApplications(android.content.pm.PackageManager.GET_META_DATA)
+                .mapNotNull { ai ->
+                    try {
+                        val pi = context.packageManager.getPackageInfo(ai.packageName, 0)
+                        if (pi.firstInstallTime >= cutoff && (ai.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0) {
+                            val name = context.packageManager.getApplicationLabel(ai).toString()
+                            val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date(pi.firstInstallTime))
+                            Triple(name, ai.packageName, date)
+                        } else null
+                    } catch (_: Exception) { null }
+                }
+                .sortedByDescending { it.third }
+
+            if (apps.isEmpty()) {
+                "No apps installed in the last $days days."
+            } else {
+                val sb = StringBuilder("Recently installed apps (last $days days):\n")
+                for ((name, pkg, date) in apps) {
+                    sb.appendLine("  $name ($pkg) — installed $date")
+                }
+                sb.toString().trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getRecentlyInstalledApps", it) }
+            r.onFailure { logError("getRecentlyInstalledApps", it) }
+        }
+    }
+
+    override suspend fun getRunningApps(): Result<String> {
+        logAction("getRunningApps", "")
+        return runCatching {
+            val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            @Suppress("DEPRECATION")
+            val processes = am.runningAppProcesses
+            if (processes.isNullOrEmpty()) {
+                "No running app processes found (may require additional permissions)."
+            } else {
+                val sb = StringBuilder("Running apps (${processes.size}):\n")
+                for (p in processes) {
+                    val importance = when (p.importance) {
+                        android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND -> "Foreground"
+                        android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE -> "Foreground Service"
+                        android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_VISIBLE -> "Visible"
+                        android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_SERVICE -> "Service"
+                        android.app.ActivityManager.RunningAppProcessInfo.IMPORTANCE_CACHED -> "Cached"
+                        else -> "Background"
+                    }
+                    val appName = try {
+                        context.packageManager.getApplicationLabel(
+                            context.packageManager.getApplicationInfo(p.processName, 0)
+                        ).toString()
+                    } catch (_: Exception) { p.processName }
+                    sb.appendLine("  $appName (${p.processName}): $importance")
+                }
+                sb.toString().trim()
+            }
+        }.also { r ->
+            r.onSuccess { logResult("getRunningApps", it) }
+            r.onFailure { logError("getRunningApps", it) }
+        }
+    }
+
+    override suspend fun killBackgroundApp(packageName: String): Result<String> {
+        logAction("killBackgroundApp", "packageName=$packageName")
+        return runCatching {
+            val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            @Suppress("DEPRECATION")
+            am.killBackgroundProcesses(packageName)
+            "Killed background processes for $packageName."
+        }.also { r ->
+            r.onSuccess { logResult("killBackgroundApp", it) }
+            r.onFailure { logError("killBackgroundApp", it) }
+        }
+    }
+
+    // ==========================================
     // Helpers
     // ==========================================
+
+    private fun resolveDirectory(directory: String): java.io.File {
+        val knownDirs = mapOf(
+            "downloads" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            "download" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS),
+            "documents" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOCUMENTS),
+            "pictures" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES),
+            "photos" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES),
+            "movies" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES),
+            "music" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC),
+            "dcim" to android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM),
+            "camera" to java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM), "Camera")
+        )
+        val normalized = directory.lowercase().trim()
+        return knownDirs[normalized] ?: java.io.File(directory)
+    }
+
+    private fun formatFileSize(bytes: Long): String {
+        return when {
+            bytes < 1024 -> "$bytes B"
+            bytes < 1024 * 1024 -> "%.1f KB".format(bytes / 1024.0)
+            bytes < 1024 * 1024 * 1024 -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+            else -> "%.2f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+        }
+    }
 
     private fun hasPermission(permission: String): Boolean {
         val granted = ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED

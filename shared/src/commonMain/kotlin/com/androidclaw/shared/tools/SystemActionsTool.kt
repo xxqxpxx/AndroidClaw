@@ -71,6 +71,28 @@ class SystemActionsTool(
                     // Settings
                     add("clear_app_data"); add("default_apps"); add("digital_wellbeing")
                     add("ringtone_settings"); add("create_reminder")
+                    // Ride-hailing
+                    add("order_ride")
+                    // Email
+                    add("read_emails")
+                    // Accessibility extended
+                    add("talkback_on"); add("talkback_off")
+                    add("set_display_size"); add("high_contrast_on"); add("high_contrast_off")
+                    add("accessibility_info")
+                    // Ringtone/sound
+                    add("set_ringtone"); add("set_notification_sound")
+                    // Power
+                    add("schedule_power_off")
+                    // Network diagnostics
+                    add("signal_strength"); add("connection_type"); add("ip_address"); add("ping")
+                    // Default apps
+                    add("set_default_browser"); add("set_default_launcher")
+                    // Focus modes
+                    add("driving_mode_on"); add("driving_mode_off")
+                    // Document scanner / Cast / Reminders
+                    add("document_scanner")
+                    add("discover_cast_devices"); add("cast_media")
+                    add("complete_reminder")
                 }
             }
             putJsonObject("settings_page") {
@@ -80,6 +102,10 @@ class SystemActionsTool(
             putJsonObject("destination") {
                 put("type", "string")
                 put("description", "Address or place for navigate_to")
+            }
+            putJsonObject("transport_mode") {
+                put("type", "string")
+                put("description", "Transport mode for navigate_to: driving, walking, cycling, transit")
             }
             putJsonObject("to") {
                 put("type", "string")
@@ -141,6 +167,43 @@ class SystemActionsTool(
                 put("type", "integer")
                 put("description", "Reminder time in epoch millis for create_reminder")
             }
+            putJsonObject("ride_service") {
+                put("type", "string")
+                putJsonArray("enum") { add("uber"); add("lyft"); add("careem"); add("bolt") }
+                put("description", "Ride-hailing service for order_ride (default: uber)")
+            }
+            putJsonObject("email_count") {
+                put("type", "integer")
+                put("description", "Number of email notifications to read (default 10)")
+            }
+            putJsonObject("display_size") {
+                put("type", "string")
+                put("description", "Display size: small, default, large, largest (for set_display_size)")
+            }
+            putJsonObject("ringtone_uri") {
+                put("type", "string")
+                put("description", "Content URI or file path for set_ringtone / set_notification_sound")
+            }
+            putJsonObject("hour") {
+                put("type", "integer")
+                put("description", "Hour (0-23) for schedule_power_off")
+            }
+            putJsonObject("minute") {
+                put("type", "integer")
+                put("description", "Minute (0-59) for schedule_power_off")
+            }
+            putJsonObject("host") {
+                put("type", "string")
+                put("description", "Host/IP to ping (e.g. google.com)")
+            }
+            putJsonObject("media_url") {
+                put("type", "string")
+                put("description", "Media URL for cast_media")
+            }
+            putJsonObject("reminder_id") {
+                put("type", "string")
+                put("description", "Reminder ID for complete_reminder")
+            }
         }
         putJsonArray("required") { add("action") }
     }
@@ -182,7 +245,8 @@ class SystemActionsTool(
             "navigate_to" -> {
                 val dest = input["destination"]?.jsonPrimitive?.contentOrNull
                     ?: return ToolResult("Missing destination", isError = true)
-                bridge.navigateTo(dest)
+                val mode = input["transport_mode"]?.jsonPrimitive?.contentOrNull ?: ""
+                bridge.navigateTo(dest, mode)
             }
             "send_email" -> {
                 val to = input["to"]?.jsonPrimitive?.contentOrNull
@@ -334,6 +398,92 @@ class SystemActionsTool(
                 val time = input["reminder_time"]?.jsonPrimitive?.longOrNull
                     ?: (System.currentTimeMillis() + 3600000) // default 1 hour from now
                 bridge.createReminder(text, time)
+            }
+
+            // Ride-hailing
+            "order_ride" -> {
+                val dest = input["destination"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing destination for ride", isError = true)
+                val service = input["ride_service"]?.jsonPrimitive?.contentOrNull ?: "uber"
+                bridge.orderRide(dest, service)
+            }
+
+            // Email reading
+            "read_emails" -> {
+                val count = input["email_count"]?.jsonPrimitive?.intOrNull ?: 10
+                bridge.getEmailNotifications(count)
+            }
+
+            // Accessibility extended
+            "talkback_on" -> bridge.setTalkBack(true)
+            "talkback_off" -> bridge.setTalkBack(false)
+            "set_display_size" -> {
+                val size = input["display_size"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing display_size (small/default/large/largest)", isError = true)
+                bridge.setDisplaySize(size)
+            }
+            "high_contrast_on" -> bridge.setHighContrast(true)
+            "high_contrast_off" -> bridge.setHighContrast(false)
+            "accessibility_info" -> bridge.getAccessibilitySettings()
+
+            // Ringtone / sound
+            "set_ringtone" -> {
+                val uri = input["ringtone_uri"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing ringtone_uri", isError = true)
+                bridge.setRingtone(uri)
+            }
+            "set_notification_sound" -> {
+                val uri = input["ringtone_uri"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing ringtone_uri", isError = true)
+                bridge.setNotificationSound(uri)
+            }
+
+            // Power
+            "schedule_power_off" -> {
+                val h = input["hour"]?.jsonPrimitive?.intOrNull
+                    ?: return ToolResult("Missing hour (0-23)", isError = true)
+                val m = input["minute"]?.jsonPrimitive?.intOrNull ?: 0
+                bridge.schedulePowerOff(h, m)
+            }
+
+            // Network diagnostics
+            "signal_strength" -> bridge.getSignalStrength()
+            "connection_type" -> bridge.getConnectionType()
+            "ip_address" -> bridge.getIpAddress()
+            "ping" -> {
+                val host = input["host"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing host to ping", isError = true)
+                bridge.pingHost(host)
+            }
+
+            // Default apps
+            "set_default_browser" -> {
+                val pkg = input["package_name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing package_name", isError = true)
+                bridge.setDefaultBrowser(pkg)
+            }
+            "set_default_launcher" -> {
+                val pkg = input["package_name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing package_name", isError = true)
+                bridge.setDefaultLauncher(pkg)
+            }
+
+            // Focus modes
+            "driving_mode_on" -> bridge.setDrivingMode(true)
+            "driving_mode_off" -> bridge.setDrivingMode(false)
+
+            // Document scanner / Cast / Reminders
+            "document_scanner" -> bridge.openDocumentScanner()
+            "discover_cast_devices" -> bridge.discoverCastDevices()
+            "cast_media" -> {
+                val url = input["media_url"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing media_url", isError = true)
+                bridge.castMedia(url)
+            }
+            "complete_reminder" -> {
+                val id = input["reminder_id"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing reminder_id", isError = true)
+                bridge.completeReminder(id)
             }
 
             else -> return ToolResult("Unknown action: $action", isError = true)

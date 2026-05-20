@@ -77,7 +77,7 @@ interface DeviceActionBridge {
     suspend fun goHome(): Result<String>
     suspend fun goBack(): Result<String>
     suspend fun showRecents(): Result<String>
-    suspend fun navigateTo(destination: String): Result<String>
+    suspend fun navigateTo(destination: String, mode: String = ""): Result<String>
     suspend fun sendEmail(to: String, subject: String, body: String): Result<String>
 
     // Ringer & audio modes
@@ -134,6 +134,22 @@ interface DeviceActionBridge {
     suspend fun screenRecord(): Result<String>
     suspend fun restartDevice(): Result<String>
 
+    // File management
+    suspend fun listFiles(directory: String = "Downloads", sortBy: String = "date"): Result<String>
+    suspend fun getFileInfo(filePath: String): Result<String>
+    suspend fun deleteFile(filePath: String): Result<String>
+    suspend fun moveFile(sourcePath: String, destDirectory: String): Result<String>
+    suspend fun organizeFiles(directory: String = "Downloads"): Result<String>
+
+    // Ride-hailing
+    suspend fun orderRide(destination: String, service: String = "uber"): Result<String>
+
+    // Email reading (via notification capture)
+    suspend fun getEmailNotifications(count: Int = 10): Result<String>
+
+    // Generic intent / deep-link
+    suspend fun openDeepLink(uri: String, packageName: String? = null, fallbackUrl: String? = null): Result<String>
+
     // Fun / random
     suspend fun coinFlip(): Result<String>
     suspend fun rollDice(sides: Int = 6): Result<String>
@@ -170,4 +186,140 @@ interface DeviceActionBridge {
     suspend fun openDigitalWellbeing(): Result<String>
     suspend fun openRingtoneSettings(): Result<String>
     suspend fun createReminder(text: String, timeMillis: Long): Result<String>
+
+    // Media sharing
+    suspend fun shareMedia(filePath: String, packageName: String? = null): Result<String>
+
+    // --- NEW: Settings toggles ---
+    suspend fun setAutoBrightness(enabled: Boolean): Result<String>
+    suspend fun setLocationEnabled(enabled: Boolean): Result<String>
+    suspend fun setAirplaneMode(enabled: Boolean): Result<String>
+    suspend fun setHotspot(enabled: Boolean): Result<String>
+    suspend fun setMobileData(enabled: Boolean): Result<String>
+    suspend fun openNfcSettings(): Result<String>
+    suspend fun getWifiInfo(): Result<String>
+    suspend fun getVolumeInfo(): Result<String>
+
+    // --- NEW: Alarm/Timer management ---
+    suspend fun listAlarms(): Result<String>
+    suspend fun cancelTimer(): Result<String>
+    suspend fun getReminders(): Result<String>
+    suspend fun deleteReminder(id: String): Result<String>
+
+    // --- NEW: Contact management ---
+    suspend fun editContact(name: String, newPhone: String, newEmail: String): Result<String>
+    suspend fun deleteContact(name: String): Result<String>
+    suspend fun getFavoriteContacts(): Result<String>
+
+    // --- NEW: SMS management ---
+    suspend fun searchSms(query: String, count: Int = 20): Result<String>
+    suspend fun deleteSmsConversation(contactName: String): Result<String>
+
+    // --- NEW: Calendar management ---
+    suspend fun deleteCalendarEvent(eventId: String): Result<String>
+    suspend fun searchCalendarEvents(query: String, daysAhead: Int = 30): Result<String>
+
+    // --- NEW: Phone management ---
+    suspend fun blockNumber(phoneNumber: String): Result<String>
+    suspend fun checkVoicemail(): Result<String>
+
+    // --- NEW: Notification interaction ---
+    suspend fun replyToNotification(key: String, text: String): Result<String>
+
+    // --- NEW: Screen time / usage ---
+    suspend fun getScreenTime(days: Int = 1): Result<String>
+    suspend fun getAppUsageStats(days: Int = 1): Result<String>
+    suspend fun getBatteryUsageStats(): Result<String>
+
+    // --- NEW: Accessibility extended ---
+    suspend fun setTalkBack(enabled: Boolean): Result<String>
+    suspend fun setDisplaySize(scale: String): Result<String> // small, default, large, largest
+    suspend fun setHighContrast(enabled: Boolean): Result<String>
+    suspend fun getAccessibilitySettings(): Result<String>
+
+    // --- NEW: Ringtone/sound management ---
+    suspend fun setRingtone(uri: String): Result<String>
+    suspend fun setNotificationSound(uri: String): Result<String>
+
+    // --- NEW: Power management ---
+    suspend fun schedulePowerOff(hour: Int, minute: Int): Result<String>
+
+    // --- NEW: Network diagnostics ---
+    suspend fun getSignalStrength(): Result<String>
+    suspend fun getConnectionType(): Result<String>
+    suspend fun getIpAddress(): Result<String>
+    suspend fun pingHost(host: String): Result<String>
+
+    // --- NEW: Default apps ---
+    suspend fun setDefaultBrowser(packageName: String): Result<String>
+    suspend fun setDefaultLauncher(packageName: String): Result<String>
+
+    // --- NEW: Focus modes ---
+    suspend fun setDrivingMode(enabled: Boolean): Result<String>
+
+    // --- System Diagnostics ---
+    suspend fun getCpuInfo(): Result<String>
+    suspend fun getSensorList(): Result<String>
+    suspend fun getThermalInfo(): Result<String>
+    suspend fun getProcessList(): Result<String>
+    suspend fun getStorageBreakdown(): Result<String>
+
+    // --- Text-to-Speech enhanced ---
+    suspend fun ttsSpeak(text: String, language: String = "", speed: Float = 1.0f, pitch: Float = 1.0f): Result<String>
+    suspend fun ttsStop(): Result<String>
+    suspend fun ttsGetVoices(): Result<String>
+
+    // --- DND granular ---
+    suspend fun setDndMode(mode: String): Result<String> // priority, alarms, total_silence, off
+    suspend fun getDndStatus(): Result<String>
+
+    // --- Wi-Fi Management ---
+    suspend fun scanWifiNetworks(): Result<String>
+    suspend fun connectToWifi(ssid: String): Result<String>
+    suspend fun getSavedWifiNetworks(): Result<String>
+    suspend fun forgetWifiNetwork(ssid: String): Result<String>
+
+    // --- Bluetooth Management ---
+    suspend fun connectBluetoothDevice(address: String): Result<String>
+    suspend fun disconnectBluetoothDevice(address: String): Result<String>
+    suspend fun pairBluetoothDevice(): Result<String>
+    suspend fun getBluetoothPairedDevices(): Result<String>
+
+    // --- Navigation Enhanced ---
+    suspend fun searchPlaces(query: String): Result<String>
+    suspend fun getDirections(from: String, to: String, mode: String = "driving"): Result<String>
+    suspend fun openStreetView(latitude: Double, longitude: Double): Result<String>
+    suspend fun getNearbyPlaces(type: String, radius: Int = 1000): Result<String>
+
+    // --- Audio Profiles ---
+    suspend fun saveAudioProfile(name: String): Result<String>
+    suspend fun loadAudioProfile(name: String): Result<String>
+    suspend fun listAudioProfiles(): Result<String>
+    suspend fun deleteAudioProfile(name: String): Result<String>
+
+    // --- Shortcuts ---
+    suspend fun createHomeShortcut(name: String, uri: String): Result<String>
+    suspend fun pinAppShortcut(packageName: String): Result<String>
+
+    // --- Document Scanner ---
+    suspend fun openDocumentScanner(): Result<String>
+
+    // --- Cast / Screen Mirror enhanced ---
+    suspend fun discoverCastDevices(): Result<String>
+    suspend fun castMedia(url: String): Result<String>
+
+    // --- Reminders enhanced ---
+    suspend fun completeReminder(id: String): Result<String>
+
+    // --- App Management (usage, permissions, storage, battery, defaults, running) ---
+    suspend fun getAppPermissions(packageName: String): Result<String>
+    suspend fun getAppStorageInfo(packageName: String): Result<String>
+    suspend fun clearAppCache(packageName: String): Result<String>
+    suspend fun getAppNotificationSettings(packageName: String): Result<String>
+    suspend fun getAppBatteryUsage(): Result<String>
+    suspend fun getDefaultApps(): Result<String>
+    suspend fun setDefaultApp(role: String, packageName: String): Result<String>
+    suspend fun getRecentlyInstalledApps(days: Int = 30): Result<String>
+    suspend fun getRunningApps(): Result<String>
+    suspend fun killBackgroundApp(packageName: String): Result<String>
 }

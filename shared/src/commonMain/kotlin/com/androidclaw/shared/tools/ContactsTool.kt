@@ -11,15 +11,15 @@ class ContactsTool(
     override val name = "contacts"
 
     override val description = """Read and manage phone contacts.
-        |Use this to find someone's phone number, add a new contact, or search contacts by name.""".trimMargin()
+        |Use this to find someone's phone number, add/edit/delete contacts, get favorites, or search contacts by name.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                putJsonArray("enum") { add("search"); add("add"); add("list") }
-                put("description", "Action: search contacts by name, add a new contact, or list all contacts")
+                putJsonArray("enum") { add("search"); add("add"); add("list"); add("edit"); add("delete"); add("get_favorites") }
+                put("description", "Action: search, add, list, edit, delete contacts or get favorites")
             }
             putJsonObject("name") {
                 put("type", "string")
@@ -63,6 +63,19 @@ class ContactsTool(
                 val limit = input["limit"]?.jsonPrimitive?.intOrNull ?: 20
                 bridge.getContacts(limit = limit)
             }
+            "edit" -> {
+                val name = input["name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing name for edit", isError = true)
+                val phone = input["phone"]?.jsonPrimitive?.contentOrNull ?: ""
+                val email = input["email"]?.jsonPrimitive?.contentOrNull ?: ""
+                bridge.editContact(name, phone, email)
+            }
+            "delete" -> {
+                val name = input["name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing name for delete", isError = true)
+                bridge.deleteContact(name)
+            }
+            "get_favorites" -> bridge.getFavoriteContacts()
             else -> return ToolResult("Unknown action: $action", isError = true)
         }
 

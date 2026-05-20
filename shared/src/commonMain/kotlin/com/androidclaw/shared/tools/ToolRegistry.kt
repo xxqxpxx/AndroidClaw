@@ -30,6 +30,20 @@ class ToolRegistry(
             tools.add(DeviceAdminTool(bridge))
             tools.add(MessagingTool(bridge))
             tools.add(SystemActionsTool(bridge))
+            tools.add(FilesTool(bridge))
+            tools.add(IntentLauncherTool(bridge))
+            tools.add(MediaControlTool(bridge))
+            tools.add(ScreenTimeTool(bridge))
+            tools.add(SystemDiagnosticsTool(bridge))
+            tools.add(TextToSpeechTool(bridge))
+            tools.add(DndControlTool(bridge))
+            tools.add(WifiManagerTool(bridge))
+            tools.add(BluetoothManagerTool(bridge))
+            tools.add(NavigationDirectionsTool(bridge))
+            tools.add(AudioProfileTool(bridge))
+            tools.add(ShortcutTool(bridge))
+            tools.add(AppManagementTool(bridge))
+            tools.add(AppIntegrationTool(bridge))
         }
 
         // Utility tools

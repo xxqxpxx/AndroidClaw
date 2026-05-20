@@ -10,16 +10,16 @@ class PhoneTool(
 
     override val name = "phone"
 
-    override val description = """Make phone calls and view call history.
-        |Use this to call someone by phone number or name, or check recent call history.""".trimMargin()
+    override val description = """Make phone calls, view call history, block numbers, and check voicemail.
+        |Use this to call someone, check recent calls, block a phone number, or access voicemail.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                putJsonArray("enum") { add("call"); add("call_log") }
-                put("description", "Action: make a phone call, or view recent call log")
+                putJsonArray("enum") { add("call"); add("call_log"); add("block_number"); add("voicemail") }
+                put("description", "Action: make a call, view call log, block a number, or check voicemail")
             }
             putJsonObject("phone_number") {
                 put("type", "string")
@@ -47,6 +47,12 @@ class PhoneTool(
                 val count = input["count"]?.jsonPrimitive?.intOrNull ?: 10
                 bridge.getCallLog(count)
             }
+            "block_number" -> {
+                val phone = input["phone_number"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing phone_number for block", isError = true)
+                bridge.blockNumber(phone)
+            }
+            "voicemail" -> bridge.checkVoicemail()
             else -> return ToolResult("Unknown action: $action", isError = true)
         }
 

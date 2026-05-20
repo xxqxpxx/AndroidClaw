@@ -80,6 +80,8 @@ class IosDeviceActionBridge : DeviceActionBridge {
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun shareText(text: String, packageName: String?): Result<String> =
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun shareMedia(filePath: String, packageName: String?): Result<String> =
+        Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun openUrl(url: String, packageName: String?): Result<String> =
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun mediaPlayPause(): Result<String> =
@@ -106,7 +108,7 @@ class IosDeviceActionBridge : DeviceActionBridge {
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun showRecents(): Result<String> =
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
-    override suspend fun navigateTo(destination: String): Result<String> =
+    override suspend fun navigateTo(destination: String, mode: String): Result<String> =
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun sendEmail(to: String, subject: String, body: String): Result<String> =
         Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
@@ -185,6 +187,23 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun coinFlip(): Result<String> = Result.success(if ((0..1).random() == 0) "Heads" else "Tails")
     override suspend fun rollDice(sides: Int): Result<String> = Result.success("Rolled a ${(1..sides).random()}")
     override suspend fun randomNumber(min: Int, max: Int): Result<String> = Result.success("${(min..max).random()}")
+
+    // File management
+    override suspend fun listFiles(directory: String, sortBy: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getFileInfo(filePath: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteFile(filePath: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun moveFile(sourcePath: String, destDirectory: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun organizeFiles(directory: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Ride-hailing
+    override suspend fun orderRide(destination: String, service: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Email reading
+    override suspend fun getEmailNotifications(count: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Deep-link
+    override suspend fun openDeepLink(uri: String, packageName: String?, fallbackUrl: String?): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
     override suspend fun countdownTo(date: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun startVoiceRecording(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun openSpeedTest(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
@@ -207,4 +226,137 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun openDigitalWellbeing(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun openRingtoneSettings(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun createReminder(text: String, timeMillis: Long): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Settings toggles ---
+    override suspend fun setAutoBrightness(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setLocationEnabled(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setAirplaneMode(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setHotspot(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setMobileData(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun openNfcSettings(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getWifiInfo(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getVolumeInfo(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Alarm/Timer management ---
+    override suspend fun listAlarms(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun cancelTimer(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getReminders(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteReminder(id: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Contact management ---
+    override suspend fun editContact(name: String, newPhone: String, newEmail: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteContact(name: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getFavoriteContacts(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: SMS management ---
+    override suspend fun searchSms(query: String, count: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteSmsConversation(contactName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Calendar management ---
+    override suspend fun deleteCalendarEvent(eventId: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun searchCalendarEvents(query: String, daysAhead: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Phone management ---
+    override suspend fun blockNumber(phoneNumber: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun checkVoicemail(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Notification interaction ---
+    override suspend fun replyToNotification(key: String, text: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Screen time / usage ---
+    override suspend fun getScreenTime(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getAppUsageStats(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getBatteryUsageStats(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Accessibility extended ---
+    override suspend fun setTalkBack(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setDisplaySize(scale: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setHighContrast(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getAccessibilitySettings(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Ringtone/sound management ---
+    override suspend fun setRingtone(uri: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setNotificationSound(uri: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Power management ---
+    override suspend fun schedulePowerOff(hour: Int, minute: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Network diagnostics ---
+    override suspend fun getSignalStrength(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getConnectionType(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getIpAddress(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun pingHost(host: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Default apps ---
+    override suspend fun setDefaultBrowser(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setDefaultLauncher(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Focus modes ---
+    override suspend fun setDrivingMode(enabled: Boolean): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: System Diagnostics ---
+    override suspend fun getCpuInfo(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getSensorList(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getThermalInfo(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getProcessList(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getStorageBreakdown(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Text-to-Speech enhanced ---
+    override suspend fun ttsSpeak(text: String, language: String, speed: Float, pitch: Float): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun ttsStop(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun ttsGetVoices(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: DND granular ---
+    override suspend fun setDndMode(mode: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getDndStatus(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Wi-Fi Management ---
+    override suspend fun scanWifiNetworks(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun connectToWifi(ssid: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getSavedWifiNetworks(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun forgetWifiNetwork(ssid: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Bluetooth Management ---
+    override suspend fun connectBluetoothDevice(address: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun disconnectBluetoothDevice(address: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun pairBluetoothDevice(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getBluetoothPairedDevices(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Navigation Enhanced ---
+    override suspend fun searchPlaces(query: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getDirections(from: String, to: String, mode: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun openStreetView(latitude: Double, longitude: Double): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getNearbyPlaces(type: String, radius: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Audio Profiles ---
+    override suspend fun saveAudioProfile(name: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun loadAudioProfile(name: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun listAudioProfiles(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteAudioProfile(name: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Shortcuts ---
+    override suspend fun createHomeShortcut(name: String, uri: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun pinAppShortcut(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Document Scanner ---
+    override suspend fun openDocumentScanner(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Cast / Screen Mirror enhanced ---
+    override suspend fun discoverCastDevices(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun castMedia(url: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- NEW: Reminders enhanced ---
+    override suspend fun completeReminder(id: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- App Management ---
+    override suspend fun getAppPermissions(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getAppStorageInfo(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun clearAppCache(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getAppNotificationSettings(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getAppBatteryUsage(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getDefaultApps(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun setDefaultApp(role: String, packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getRecentlyInstalledApps(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getRunningApps(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun killBackgroundApp(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }
