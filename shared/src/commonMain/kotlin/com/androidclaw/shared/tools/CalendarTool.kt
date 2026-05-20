@@ -10,16 +10,16 @@ class CalendarTool(
 
     override val name = "calendar"
 
-    override val description = """Read and create calendar events.
-        |Use this to check upcoming events, schedule meetings, or add reminders to the calendar.""".trimMargin()
+    override val description = """Read, create, search, and delete calendar events.
+        |Use this to check upcoming events, schedule meetings, search for events, or delete events.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                putJsonArray("enum") { add("get_events"); add("create_event") }
-                put("description", "Action: get upcoming events or create a new event")
+                putJsonArray("enum") { add("get_events"); add("create_event"); add("delete_event"); add("search_events") }
+                put("description", "Action: get upcoming events, create, delete, or search events")
             }
             putJsonObject("days_ahead") {
                 put("type", "integer")
@@ -40,6 +40,14 @@ class CalendarTool(
             putJsonObject("description") {
                 put("type", "string")
                 put("description", "Description/notes for the event")
+            }
+            putJsonObject("event_id") {
+                put("type", "string")
+                put("description", "Event ID to delete")
+            }
+            putJsonObject("query") {
+                put("type", "string")
+                put("description", "Search query to find events by title")
             }
         }
         putJsonArray("required") { add("action") }
@@ -69,6 +77,16 @@ class CalendarTool(
                     ?: return ToolResult("Invalid end_time format: $endStr", isError = true)
 
                 bridge.createCalendarEvent(title, startMillis, endMillis, desc)
+            }
+            "delete_event" -> {
+                val eventId = input["event_id"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing event_id for delete", isError = true)
+                bridge.deleteCalendarEvent(eventId)
+            }
+            "search_events" -> {
+                val query = input["query"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing query for search", isError = true)
+                bridge.searchCalendarEvents(query)
             }
             else -> return ToolResult("Unknown action: $action", isError = true)
         }

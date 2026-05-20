@@ -4,8 +4,12 @@ import com.androidclaw.shared.llm.*
 import com.androidclaw.shared.logging.Logger
 import com.androidclaw.shared.memory.ConversationRepository
 import com.androidclaw.shared.models.MessageRole
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 
@@ -15,6 +19,17 @@ sealed class AgentEvent {
     data class ToolCallComplete(val toolId: String, val result: String) : AgentEvent()
     data class MessageComplete(val fullText: String) : AgentEvent()
     data class Error(val throwable: Throwable) : AgentEvent()
+    /**
+     * Token usage reported by the upstream model. Emitted at least once per
+     * model turn (on `message_start`) and again on `message_delta` with the
+     * final output token count. UI can sum these across an agent run.
+     */
+    data class Usage(
+        val inputTokens: Int?,
+        val outputTokens: Int?,
+        val cacheCreationInputTokens: Int?,
+        val cacheReadInputTokens: Int?
+    ) : AgentEvent()
 }
 
 class AgentLoop(
@@ -72,7 +87,7 @@ class AgentLoop(
                 Logger.i(TAG, "Using local LLM: $localLlmUrl, model=$localLlmModel")
                 localLlmClient.streamMessage(request, localLlmUrl, localLlmApiKey, localLlmModel)
             } else {
-                client.streamMessage(request, authToken, apiKey)
+                client.streamMessage(request, authToken, apiKey, enablePromptCaching = config.enablePromptCaching)
             }
 
             streamFlow.collect { event ->
@@ -107,6 +122,16 @@ class AgentLoop(
                         Logger.e(TAG, "Stream error: ${event.message}")
                         emit(AgentEvent.Error(RuntimeException(event.message)))
                     }
+                    is ClaudeStreamEvent.Usage -> {
+                        emit(
+                            AgentEvent.Usage(
+                                inputTokens = event.inputTokens,
+                                outputTokens = event.outputTokens,
+                                cacheCreationInputTokens = event.cacheCreationInputTokens,
+                                cacheReadInputTokens = event.cacheReadInputTokens
+                            )
+                        )
+                    }
                     else -> {}
                 }
             }
@@ -128,31 +153,50 @@ class AgentLoop(
                 }
                 currentMessages.add(ClaudeMessage("assistant", assistantContent))
 
-                // Execute tools and build tool_result message
-                val toolResults = mutableListOf<ContentBlock>()
-                for (tc in toolCalls) {
-                    val tool = toolMap[tc.name]
-                    val inputStr = tc.inputJson.toString()
-                    Logger.i(TAG, "Executing tool=${tc.name}, id=${tc.id}, input=${inputStr.take(500)}")
-                    val result = if (tool != null) {
-                        val inputObj = try {
-                            json.decodeFromString(JsonObject.serializer(), inputStr)
-                        } catch (e: Exception) {
-                            Logger.e(TAG, "Failed to parse tool input for ${tc.name}", e)
-                            JsonObject(emptyMap())
-                        }
-                        try {
-                            tool.execute(inputObj).also { r ->
-                                Logger.i(TAG, "Tool ${tc.name} result: isError=${r.isError}, content=${r.content.take(300)}")
+                // Execute tools IN PARALLEL, preserving order of results.
+                Logger.i(TAG, "Executing ${toolCalls.size} tool(s) in parallel")
+                val results: List<ToolResult> = coroutineScope {
+                    toolCalls.map { tc ->
+                        async {
+                            val tool = toolMap[tc.name]
+                            val inputStr = tc.inputJson.toString()
+                            Logger.i(TAG, "Executing tool=${tc.name}, id=${tc.id}, input=${inputStr.take(500)}")
+                            if (tool != null) {
+                                val inputObj = try {
+                                    json.decodeFromString(JsonObject.serializer(), inputStr)
+                                } catch (e: Exception) {
+                                    Logger.e(TAG, "Failed to parse tool input for ${tc.name}", e)
+                                    JsonObject(emptyMap())
+                                }
+                                try {
+                                    val timedResult = withTimeoutOrNull(config.toolTimeoutMs) {
+                                        tool.execute(inputObj)
+                                    }
+                                    if (timedResult == null) {
+                                        Logger.w(TAG, "Tool ${tc.name} timed out after ${config.toolTimeoutMs}ms")
+                                        ToolResult(
+                                            "Tool execution timed out after ${config.toolTimeoutMs}ms",
+                                            isError = true
+                                        )
+                                    } else {
+                                        Logger.i(TAG, "Tool ${tc.name} result: isError=${timedResult.isError}, content=${timedResult.content.take(300)}")
+                                        timedResult
+                                    }
+                                } catch (e: Exception) {
+                                    Logger.e(TAG, "Tool ${tc.name} CRASHED: ${e::class.simpleName}: ${e.message}", e)
+                                    ToolResult("Tool execution failed: ${e.message}", isError = true)
+                                }
+                            } else {
+                                Logger.w(TAG, "Unknown tool: ${tc.name}")
+                                ToolResult("Unknown tool: ${tc.name}", isError = true)
                             }
-                        } catch (e: Exception) {
-                            Logger.e(TAG, "Tool ${tc.name} CRASHED: ${e::class.simpleName}: ${e.message}", e)
-                            ToolResult("Tool execution failed: ${e.message}", isError = true)
                         }
-                    } else {
-                        Logger.w(TAG, "Unknown tool: ${tc.name}")
-                        ToolResult("Unknown tool: ${tc.name}", isError = true)
-                    }
+                    }.awaitAll()
+                }
+
+                val toolResults = mutableListOf<ContentBlock>()
+                toolCalls.forEachIndexed { i, tc ->
+                    val result = results[i]
                     toolResults.add(ContentBlock.ToolResult(tc.id, result.content, result.isError))
                     emit(AgentEvent.ToolCallComplete(tc.id, result.content))
                 }

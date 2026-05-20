@@ -10,8 +10,8 @@ class DeviceSettingsTool(
 
     override val name = "device_settings"
 
-    override val description = """Control device settings: Wi-Fi, Bluetooth, flashlight, brightness, volume, ringer mode, screen timeout, dark mode, auto-rotate, and more.
-        |Use this when the user asks to toggle settings, adjust their device, silence their phone, or get device info.""".trimMargin()
+    override val description = """Control device settings: Wi-Fi, Bluetooth, flashlight, brightness, volume, ringer mode, screen timeout, dark mode, auto-rotate, location, airplane mode, hotspot, mobile data, NFC, and more.
+        |Use this when the user asks to toggle settings, adjust their device, silence their phone, check connectivity info, or get device info.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
@@ -30,6 +30,14 @@ class DeviceSettingsTool(
                     add("dark_mode_on"); add("dark_mode_off")
                     add("battery_saver")
                     add("device_info")
+                    add("auto_brightness_on"); add("auto_brightness_off")
+                    add("location_on"); add("location_off")
+                    add("airplane_on"); add("airplane_off")
+                    add("hotspot_on"); add("hotspot_off")
+                    add("mobile_data_on"); add("mobile_data_off")
+                    add("nfc_settings")
+                    add("wifi_info")
+                    add("get_volume")
                 }
             }
             putJsonObject("level") {
@@ -85,6 +93,19 @@ class DeviceSettingsTool(
             "dark_mode_off" -> bridge.setDarkMode(false)
             "battery_saver" -> bridge.setBatterySaver(true)
             "device_info" -> bridge.getDeviceInfo()
+            "auto_brightness_on" -> bridge.setAutoBrightness(true)
+            "auto_brightness_off" -> bridge.setAutoBrightness(false)
+            "location_on" -> bridge.setLocationEnabled(true)
+            "location_off" -> bridge.setLocationEnabled(false)
+            "airplane_on" -> bridge.setAirplaneMode(true)
+            "airplane_off" -> bridge.setAirplaneMode(false)
+            "hotspot_on" -> bridge.setHotspot(true)
+            "hotspot_off" -> bridge.setHotspot(false)
+            "mobile_data_on" -> bridge.setMobileData(true)
+            "mobile_data_off" -> bridge.setMobileData(false)
+            "nfc_settings" -> bridge.openNfcSettings()
+            "wifi_info" -> bridge.getWifiInfo()
+            "get_volume" -> bridge.getVolumeInfo()
             else -> return ToolResult("Unknown action: $action", isError = true)
         }
 

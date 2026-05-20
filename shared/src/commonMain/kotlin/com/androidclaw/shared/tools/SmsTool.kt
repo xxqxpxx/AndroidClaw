@@ -19,8 +19,8 @@ class SmsTool(
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                putJsonArray("enum") { add("send"); add("read_recent"); add("read_from_contact") }
-                put("description", "Action: send an SMS, read recent messages, or read messages from a specific contact")
+                putJsonArray("enum") { add("send"); add("read_recent"); add("read_from_contact"); add("search"); add("delete_conversation") }
+                put("description", "Action: send SMS, read recent, read from contact, search messages, or delete conversation")
             }
             putJsonObject("phone_number") {
                 put("type", "string")
@@ -37,6 +37,10 @@ class SmsTool(
             putJsonObject("count") {
                 put("type", "integer")
                 put("description", "Number of messages to retrieve (default 10)")
+            }
+            putJsonObject("query") {
+                put("type", "string")
+                put("description", "Search query to find in messages")
             }
         }
         putJsonArray("required") { add("action") }
@@ -63,6 +67,17 @@ class SmsTool(
                     ?: return ToolResult("Missing contact_name", isError = true)
                 val count = input["count"]?.jsonPrimitive?.intOrNull ?: 10
                 bridge.getSmsFromContact(name, count)
+            }
+            "search" -> {
+                val query = input["query"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing query for search", isError = true)
+                val count = input["count"]?.jsonPrimitive?.intOrNull ?: 20
+                bridge.searchSms(query, count)
+            }
+            "delete_conversation" -> {
+                val name = input["contact_name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing contact_name for delete", isError = true)
+                bridge.deleteSmsConversation(name)
             }
             else -> return ToolResult("Unknown action: $action", isError = true)
         }

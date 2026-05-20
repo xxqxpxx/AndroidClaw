@@ -67,6 +67,18 @@ sealed class ClaudeStreamEvent {
     data object MessageStop : ClaudeStreamEvent()
     data class ToolUseStart(val index: Int, val id: String, val name: String) : ClaudeStreamEvent()
     data class Error(val message: String) : ClaudeStreamEvent()
+
+    /**
+     * Token usage report. Anthropic emits partial usage on `message_start`
+     * (input + cache fields) and final output_tokens on `message_delta`.
+     * `cacheReadInputTokens` > 0 confirms prompt-caching is hitting.
+     */
+    data class Usage(
+        val inputTokens: Int = 0,
+        val outputTokens: Int = 0,
+        val cacheCreationInputTokens: Int = 0,
+        val cacheReadInputTokens: Int = 0
+    ) : ClaudeStreamEvent()
 }
 
 // Internal SSE parsing models
@@ -80,7 +92,16 @@ internal data class SseMessageStart(
 internal data class SseMessageBody(
     val id: String,
     val model: String,
-    val role: String
+    val role: String,
+    val usage: SseUsage? = null
+)
+
+@Serializable
+internal data class SseUsage(
+    @SerialName("input_tokens") val inputTokens: Int = 0,
+    @SerialName("output_tokens") val outputTokens: Int = 0,
+    @SerialName("cache_creation_input_tokens") val cacheCreationInputTokens: Int = 0,
+    @SerialName("cache_read_input_tokens") val cacheReadInputTokens: Int = 0
 )
 
 @Serializable
@@ -121,7 +142,8 @@ internal data class SseContentBlockStop(
 @Serializable
 internal data class SseMessageDelta(
     val type: String,
-    val delta: SseMessageDeltaBody
+    val delta: SseMessageDeltaBody,
+    val usage: SseUsage? = null
 )
 
 @Serializable

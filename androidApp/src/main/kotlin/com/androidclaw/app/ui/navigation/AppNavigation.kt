@@ -18,6 +18,7 @@ import com.androidclaw.app.ui.settings.ModelManagementScreen
 import com.androidclaw.app.ui.settings.SettingsScreen
 import com.androidclaw.app.ui.search.GlobalSearchScreen
 import com.androidclaw.app.ui.settings.SystemPromptScreen
+import com.androidclaw.app.ui.settings.ToolsScreen
 import com.androidclaw.app.ui.settings.UsageStatsScreen
 import org.koin.compose.koinInject
 
@@ -86,7 +87,14 @@ fun AppNavigation(shortcutRoute: String? = null) {
                 onBack = { navController.popBackStack() },
                 onNavigateToModels = { navController.navigate("settings/models") },
                 onNavigateToPersona = { navController.navigate("settings/persona") },
-                onNavigateToStats = { navController.navigate("settings/stats") }
+                onNavigateToStats = { navController.navigate("settings/stats") },
+                onNavigateToTools = { navController.navigate("settings/tools") }
+            )
+        }
+
+        composable("settings/tools") {
+            ToolsScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
