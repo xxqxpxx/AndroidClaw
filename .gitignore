@@ -1,44 +1,72 @@
+### IDE
 *.iml
-.gradle
-/local.properties
-/.idea
-.DS_Store
-/build
+.idea/
+.vscode/
+
+### Build
+.gradle/
+build/
 /captures
 .externalNativeBuild
 .cxx
+.kotlin/
+out/
+gen/
+
+### Binaries
 *.apk
 *.aab
 *.dex
 *.class
+*.bin
+*.onnx
+*.gguf
+
+### Logs & Temp
 *.log
 *.tmp
 *.bak
 *.swp
-gen/
-out/
-# Kotlin
+
+### Kotlin
 *.kotlin_module
-# Android
-/androidApp/build/
-/shared/build/
-/backend/build/
-/iosApp/build/
-# Models (downloaded at runtime)
-*.bin
-*.onnx
-*.gguf
-# Environment
+
+### OS
+.DS_Store
+Thumbs.db
+
+### Local Configuration
+local.properties
+gradle.properties.local
+signing.properties
+fastlane/
+
+### Secrets & Credentials (NEVER COMMIT)
 .env
+.env.local
+.env.*.local
+*.keystore
+*.keystore.jks
+*.jks
+*.p12
+*.p8
+google-services.json
+firebase-debug.log
+api.key
+secret.key
+aws_credentials
+.aws/credentials
+
+### CI/CD Secrets
+.github/workflows/*.key
+secrets.yml
+.circleci/config.local.yml
+
+### AI Model Artifacts (downloaded at runtime)
+*.onnx
+*.bin
+*.gguf
 *.ppn
 
-# Kotlin build cache
-.kotlin/
-
-# Firebase (contains API keys - each dev downloads their own)
-google-services.json
-
-# Secrets
-*.keystore
-*.jks
-signing.properties
+### IDE Workspaces
+.claude/settings.local.json

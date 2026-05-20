@@ -1,0 +1,30 @@
+# This file is for local development only.
+# DO NOT commit to version control (included in .gitignore).
+# Each developer should create their own copy from this template.
+#
+# SECURITY: Never share this file publicly. It contains your personal API keys.
+
+# Android SDK location
+sdk.dir=/path/to/android/sdk
+
+# Anthropic API key (get from https://console.anthropic.com)
+# Only used for debug builds. Release APKs do NOT contain this.
+# IMPORTANT: Keep this secret! Never commit this file.
+anthropic.api.key=your-api-key-here
+
+# Firebase Configuration (optional, for crash reporting)
+# Download from Firebase Console > Project Settings > google-services.json
+# Copy to androidApp/google-services.json (in .gitignore)
+# firebase.api.key=your-firebase-api-key
+
+# Release Keystore Configuration (optional, for signing release builds)
+# Generate with: keytool -genkey -v -keystore release.keystore -keyalg RSA -keysize 2048 -validity 10000
+# SECURITY: Never commit keystore files or passwords!
+# release.keystore.path=/path/to/release.keystore
+# release.keystore.password=your-keystore-password
+# release.key.alias=your-key-alias
+# release.key.password=your-key-password
+
+# Custom LLM Server (optional)
+# llm.server.url=http://localhost:8000
+# llm.server.api.key=your-optional-key

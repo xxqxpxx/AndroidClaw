@@ -5,6 +5,7 @@ AI-powered Android assistant that fully controls your phone. A smarter replaceme
 ## Features
 
 ### AI Providers
+
 - **Claude (Cloud)** - Most powerful. Full tool calling, web search, 115+ actions
 - **On-Device (Private)** - Runs locally on your phone via MediaPipe. No internet needed after model download
 - **Custom Server (Pro)** - Connect to Ollama, LM Studio, or any OpenAI-compatible endpoint
@@ -32,6 +33,7 @@ AI-powered Android assistant that fully controls your phone. A smarter replaceme
 **Utility** - Alarms, timers, stopwatch, calculator, date/time, coin flip, dice roll, random number, countdown, web search, read webpage, code execution, voice recording, speed test, cast screen, incognito browsing, find my phone, read aloud (TTS), flashlight SOS, email, wallpaper, font size
 
 ### Additional Features
+
 - **Animated cat mascot** - Pixel art cat that walks when thinking, runs when executing tools
 - **Sound effects** - Audio feedback for sending messages, tool completion, task done
 - **Voice input** - Android SpeechRecognizer for voice commands
@@ -83,6 +85,7 @@ AndroidClaw/
 ## Setup
 
 ### Prerequisites
+
 - Android Studio Hedgehog or newer
 - JDK 17
 - Android SDK 35
@@ -90,54 +93,150 @@ AndroidClaw/
 ### Build & Run
 
 1. Clone the repo:
+
    ```bash
    git clone https://github.com/xxqxpxx/AndroidClaw.git
    cd AndroidClaw
    ```
 
-2. Add your API key to `local.properties`:
-   ```properties
-   anthropic.api.key=sk-ant-your-key-here
+2. Create `local.properties` from the template:
+
+   ```bash
+   cp local.properties.example local.properties
    ```
 
-3. Add `google-services.json` from Firebase Console to `androidApp/`
+   Then edit with your values:
+
+   ```properties
+   sdk.dir=/path/to/android/sdk
+   anthropic.api.key=your-api-key-here
+   ```
+
+   ⚠️ **SECURITY:** Never commit `local.properties` — it contains your API keys!
+
+3. Add `google-services.json` (optional, for Firebase crash reporting):
+
+   ```bash
+   # Download from Firebase Console > Project Settings > google-services.json
+   cp google-services.json.example androidApp/google-services.json
+   # Edit with your Firebase credentials
+   ```
+
+   ⚠️ **SECURITY:** Never commit `google-services.json` — it's in `.gitignore`
 
 4. Build and install:
    ```bash
-   ./gradlew :androidApp:installRelease
+   ./gradlew :androidApp:installDebug  # Use your API key from local.properties
    ```
 
-### Permissions
-On first launch, the app requests all required permissions. Grant them all for full functionality.
+### Initial Setup
 
-### Accessibility Service
-For auto-sending messages in WhatsApp/Telegram/Signal:
-1. Go to Settings > Accessibility
-2. Find AndroidClaw and enable it
+On first launch, the app will:
 
-### Device Admin (optional)
-For screen lock and security features:
-1. Go to app Settings > Device Control
-2. Tap "Enable" for Device Admin
+1. Request all required permissions (grant them all)
+2. Show onboarding to choose an AI provider
+3. Download models if using on-device inference
+
+### Permissions Explained
+
+- **Contacts/Phone/SMS** — For messaging and calling actions
+- **Location** — For map navigation
+- **Calendar** — For viewing/creating events
+- **Microphone** — For voice input
+- **Camera** — For taking photos and scanning QR codes
+- **Accessibility** — For auto-sending messages (opt-in)
+- **Device Admin** — For advanced control (opt-in)
 
 ## LLM Provider Configuration
 
 ### Claude (Cloud)
+
 Enter your Anthropic API key in Settings or during onboarding. Get one at [console.anthropic.com](https://console.anthropic.com).
 
 ### On-Device (Private)
+
 Download a Gemma 2B model (~1.4 GB) for fully offline, privacy-first inference. No data leaves your phone.
 
 ### Custom Server (Pro)
+
 Connect to any OpenAI-compatible endpoint:
+
 - **Ollama**: `http://YOUR_PC_IP:11434`, model: `llama3.2`
 - **LM Studio**: `http://YOUR_PC_IP:1234`, model: auto-detected
 - **llama.cpp server**: `http://YOUR_PC_IP:8080`
 
 ## Google Play Compliance
+
 - Targets Android 15 (API 35)
 - 16 KB page size compatible (AGP 8.5.2, `jniLibs.useLegacyPackaging = false`)
 - Adaptive launcher icon
 
+## Security
+
+⚠️ **Important:** Never commit your API keys or credentials to version control.
+
+- **`local.properties`** — Contains your personal API keys (always `.gitignored`)
+- **`google-services.json`** — Firebase config with credentials (always `.gitignored`)
+- **Release APK** — Does NOT contain API keys; users provide them at runtime
+- **Debug APK** — Only for development; embeds API key from `local.properties`
+
+See [SECURITY.md](SECURITY.md) for responsible disclosure and security practices.
+
+## Troubleshooting
+
+### App crashes on startup
+
+- Check `Logcat` in Android Studio for detailed errors
+- Ensure you have the correct API key configured
+- Try clearing app data: Settings > Apps > AndroidClaw > Storage > Clear Data
+
+### Tools not working
+
+- Verify all required permissions are granted
+- For SMS/calls: ensure Phone and Contacts permissions are enabled
+- For messaging apps: enable Accessibility Service in Settings
+
+### On-device LLM runs slowly
+
+- Reduce context window or max tokens in Settings
+- Close background apps to free RAM
+- Use a model optimized for your device (Gemma 2B recommended)
+
+### Model download stuck
+
+- Check internet connection and free storage (min 2 GB)
+- Try again—downloads resume from last completed chunk
+- Use custom server for faster testing
+
+## Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Quick Start for Contributors
+
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+2. Fork the repo and create a feature branch
+3. Follow the code style and add tests
+4. Submit a pull request with a clear description
+
+## Support
+
+- **Questions?** Open a [GitHub Discussion](../../discussions)
+- **Bug report?** File a [GitHub Issue](../../issues)
+- **Security concern?** Please email maintainers privately
+
+## Roadmap
+
+- [ ] iOS app (Compose Multiplatform support)
+- [ ] Desktop companion app (web UI for management)
+- [ ] Plugin system for custom device actions
+- [ ] Cloud sync for multi-device orchestration
+- [ ] Improved model quantization for faster on-device inference
+
 ## License
-Private repository.
+
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
+
+---
+
+**Maintained by** [Ahmed Abdul Fatah](https://github.com/xxqxpxx) and contributors ✨

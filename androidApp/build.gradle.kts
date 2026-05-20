@@ -67,7 +67,9 @@ android {
         versionCode = 1
         versionName = "0.1.0"
 
-        buildConfigField("String", "DEFAULT_API_KEY", "\"${localProperties.getProperty("anthropic.api.key", "")}\"")
+        // API key should only be set in debug builds, loaded from local.properties
+        // Release builds should NOT contain API keys - users supply at runtime
+        buildConfigField("String", "DEFAULT_API_KEY", "\"\"")
     }
 
     signingConfigs {
@@ -89,10 +91,16 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Only load API key for debug builds from local.properties
+            // Keep it out of release APKs to prevent accidental leaks
+            buildConfigField("String", "DEFAULT_API_KEY", "\"${localProperties.getProperty("anthropic.api.key", "")}\"")
+        }
         release {
             isMinifyEnabled = false
             isShrinkResources = false
             signingConfig = signingConfigs.getByName("release")
+            // Release APK does NOT contain API key - loaded at runtime
         }
     }
 
