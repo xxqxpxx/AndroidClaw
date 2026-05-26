@@ -30,7 +30,7 @@ AI-powered Android assistant that fully controls your phone. A smarter replaceme
 
 **Device Info** - Battery (%, temp, health), storage, network (Wi-Fi name, IP, speed), Bluetooth devices, SIM/carrier, RAM, uptime
 
-**Utility** - Alarms, timers, stopwatch, calculator, date/time, coin flip, dice roll, random number, countdown, web search, read webpage, code execution, voice recording, speed test, cast screen, incognito browsing, find my phone, read aloud (TTS), flashlight SOS, email, wallpaper, font size
+**Utility** - Alarms, timers, stopwatch, calculator, date/time, coin flip, dice roll, random number, countdown, web search, read webpage, code execution, voice recording, speed test, cast screen, incognito browsing, sort Chrome tabs, find my phone, read aloud (TTS), flashlight SOS, email, wallpaper, font size
 
 ### Additional Features
 

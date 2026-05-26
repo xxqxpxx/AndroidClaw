@@ -222,6 +222,7 @@ private class TestDeviceActionBridge : DeviceActionBridge {
     override suspend fun openSpeedTest() = Result.success("ok")
     override suspend fun castScreen() = Result.success("ok")
     override suspend fun openIncognito() = Result.success("ok")
+    override suspend fun sortChromeTabs(order: String) = Result.success("ok")
     override suspend fun emergencyCall() = Result.success("ok")
     override suspend fun getDataUsage() = Result.success("ok")
     override suspend fun getSimInfo() = Result.success("ok")

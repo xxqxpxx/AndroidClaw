@@ -348,6 +348,9 @@ class IosDeviceActionBridge : DeviceActionBridge {
     // --- NEW: Reminders enhanced ---
     override suspend fun completeReminder(id: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 
+    // --- Browser ---
+    override suspend fun sortChromeTabs(order: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
     // --- App Management ---
     override suspend fun getAppPermissions(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun getAppStorageInfo(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))

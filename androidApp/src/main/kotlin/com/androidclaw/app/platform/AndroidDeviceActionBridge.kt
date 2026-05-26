@@ -2373,6 +2373,25 @@ class AndroidDeviceActionBridge(
         }
     }
 
+    override suspend fun sortChromeTabs(order: String): Result<String> {
+        logAction("sortChromeTabs", "order=$order")
+        return runCatching {
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to sort Chrome tabs."
+
+            val launch = context.packageManager.getLaunchIntentForPackage("com.android.chrome")
+                ?: return@runCatching "Chrome is not installed on this device."
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launch)
+            kotlinx.coroutines.delay(1500)
+
+            service.sortChromeTabs(order)
+        }.also { r ->
+            r.onSuccess { logResult("sortChromeTabs", it) }
+            r.onFailure { logError("sortChromeTabs", it) }
+        }
+    }
+
     // ==========================================
     // Emergency
     // ==========================================
