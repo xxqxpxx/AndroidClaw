@@ -5,8 +5,18 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinMultiplatform)
-    alias(libs.plugins.googleServices)
-    alias(libs.plugins.firebaseCrashlytics)
+    // Firebase plugins are applied conditionally below; google-services.json
+    // is not committed (see .gitignore), so they must not run without it.
+    alias(libs.plugins.googleServices) apply false
+    alias(libs.plugins.firebaseCrashlytics) apply false
+}
+
+// The Google Services / Crashlytics plugins fail at configuration time when
+// google-services.json is absent (e.g. CI and fresh open-source checkouts).
+// Apply them only when a developer has supplied their own Firebase config.
+if (project.file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+    apply(plugin = "com.google.firebase.crashlytics")
 }
 
 val localProperties = Properties().apply {
