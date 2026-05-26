@@ -322,4 +322,12 @@ private class TestDeviceActionBridge : DeviceActionBridge {
     override suspend fun getRecentlyInstalledApps(days: Int) = Result.success("ok")
     override suspend fun getRunningApps() = Result.success("ok")
     override suspend fun killBackgroundApp(packageName: String) = Result.success("ok")
+    override suspend fun findDuplicateFiles(directory: String) = Result.success("ok")
+    override suspend fun findLargeFiles(directory: String, minSizeMb: Int) = Result.success("ok")
+    override suspend fun findOldFiles(directory: String, olderThanDays: Int) = Result.success("ok")
+    override suspend fun findScreenshots() = Result.success("ok")
+    override suspend fun cleanupScreenshots(olderThanDays: Int) = Result.success("ok")
+    override suspend fun suggestUnusedApps(days: Int) = Result.success("ok")
+    override suspend fun applyDeviceMode(mode: String) = Result.success("ok")
+    override suspend fun closeChromeTabs(filter: String) = Result.success("ok")
 }

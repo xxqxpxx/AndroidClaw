@@ -323,4 +323,14 @@ interface DeviceActionBridge {
     suspend fun getRecentlyInstalledApps(days: Int = 30): Result<String>
     suspend fun getRunningApps(): Result<String>
     suspend fun killBackgroundApp(packageName: String): Result<String>
+
+    // --- Task automation: cleanup & tidy ---
+    suspend fun findDuplicateFiles(directory: String = "Downloads"): Result<String>
+    suspend fun findLargeFiles(directory: String = "Downloads", minSizeMb: Int = 50): Result<String>
+    suspend fun findOldFiles(directory: String = "Downloads", olderThanDays: Int = 90): Result<String>
+    suspend fun findScreenshots(): Result<String>
+    suspend fun cleanupScreenshots(olderThanDays: Int = 30): Result<String>
+    suspend fun suggestUnusedApps(days: Int = 30): Result<String>
+    suspend fun applyDeviceMode(mode: String): Result<String> // focus, sleep, battery_saver, outdoor, normal
+    suspend fun closeChromeTabs(filter: String = "duplicates"): Result<String> // duplicates, all
 }

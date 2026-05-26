@@ -172,6 +172,71 @@ class AutoSendAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Closes Chrome tabs in the tab switcher. filter="duplicates" keeps one tab per
+     * title and closes the rest; filter="all" closes tabs down to the last one.
+     */
+    suspend fun closeChromeTabs(filter: String): String {
+        if (readChromeTabs().isEmpty()) {
+            if (!openTabSwitcher()) {
+                return "Couldn't open Chrome's tab switcher. Make sure Chrome is open in the foreground."
+            }
+            delay(1200)
+        }
+        val initial = readChromeTabs()
+        if (initial.isEmpty()) return "No Chrome tabs were found."
+
+        val dedupe = !filter.equals("all", ignoreCase = true)
+        var closed = 0
+        var guard = 0
+        while (guard++ < 200) {
+            val buttons = readChromeTabCloseButtons()
+            if (buttons.isEmpty()) break
+            val target: AccessibilityNodeInfo? = if (dedupe) {
+                val seen = mutableSetOf<String>()
+                buttons.firstOrNull { !seen.add(it.first.lowercase()) }?.second
+            } else {
+                if (buttons.size <= 1) null else buttons.first().second
+            }
+            if (target == null) break
+
+            val clicked = target.performAction(AccessibilityNodeInfo.ACTION_CLICK) ||
+                (target.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK) ?: false)
+            if (!clicked) break
+            closed++
+            delay(500)
+        }
+        return when {
+            closed == 0 && dedupe -> "No duplicate Chrome tabs found (${initial.size} tabs open)."
+            dedupe -> "Closed $closed duplicate Chrome tab(s); kept one of each."
+            else -> "Closed $closed Chrome tab(s) (kept the last one open)."
+        }
+    }
+
+    private fun readChromeTabCloseButtons(): List<Pair<String, AccessibilityNodeInfo>> {
+        val root = rootInActiveWindow ?: return emptyList()
+        val out = mutableListOf<Triple<String, AccessibilityNodeInfo, Rect>>()
+        collectCloseButtons(root, out)
+        return out.sortedWith(compareBy({ it.third.top / 100 }, { it.third.left }))
+            .map { it.first to it.second }
+    }
+
+    private fun collectCloseButtons(node: AccessibilityNodeInfo, out: MutableList<Triple<String, AccessibilityNodeInfo, Rect>>) {
+        val desc = node.contentDescription?.toString()
+        if (desc != null) {
+            val match = closeTabRegex.find(desc.trim())
+            if (match != null) {
+                val title = match.groupValues[1].trim()
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                if (title.isNotEmpty()) out.add(Triple(title, node, bounds))
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectCloseButtons(child, out)
+        }
+    }
+
     private fun openTabSwitcher(): Boolean {
         val root = rootInActiveWindow ?: return false
         val candidates = mutableListOf<AccessibilityNodeInfo>()

@@ -5378,6 +5378,248 @@ class AndroidDeviceActionBridge(
     }
 
     // ==========================================
+    // Task automation: cleanup & tidy
+    // ==========================================
+
+    override suspend fun findDuplicateFiles(directory: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findDuplicateFiles", "dir=$directory")
+        runCatching {
+            val dir = resolveDirectory(directory)
+            if (!dir.exists() || !dir.isDirectory) return@runCatching "Directory not found: ${dir.absolutePath}"
+            val files = dir.walkTopDown().filter { it.isFile && it.length() > 0 }.toList()
+            if (files.isEmpty()) return@runCatching "No files in ${dir.absolutePath}"
+
+            val duplicateGroups = mutableListOf<List<java.io.File>>()
+            // Group by size first (cheap), then hash content within each size group.
+            for ((_, sameSize) in files.groupBy { it.length() }.filterValues { it.size > 1 }) {
+                val byHash = sameSize.groupBy { hashFile(it) }.filterValues { it.size > 1 }
+                duplicateGroups.addAll(byHash.values)
+            }
+            if (duplicateGroups.isEmpty()) return@runCatching "No duplicate files found in ${dir.name}."
+
+            var reclaimable = 0L
+            buildString {
+                appendLine("Found ${duplicateGroups.size} duplicate set(s) in ${dir.name}:")
+                duplicateGroups.sortedByDescending { it[0].length() }.take(20).forEachIndexed { i, group ->
+                    val size = group[0].length()
+                    reclaimable += size * (group.size - 1)
+                    appendLine("${i + 1}. ${group.size} copies, ${formatFileSize(size)} each:")
+                    group.forEach { appendLine("   - ${it.absolutePath}") }
+                }
+                appendLine("Reclaimable by removing extras: ${formatFileSize(reclaimable)}")
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findDuplicateFiles", it.take(200)) }
+            r.onFailure { logError("findDuplicateFiles", it) }
+        }
+    }
+
+    override suspend fun findLargeFiles(directory: String, minSizeMb: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findLargeFiles", "dir=$directory, minSizeMb=$minSizeMb")
+        runCatching {
+            val dir = resolveDirectory(directory)
+            if (!dir.exists() || !dir.isDirectory) return@runCatching "Directory not found: ${dir.absolutePath}"
+            val threshold = minSizeMb.coerceAtLeast(1) * 1024L * 1024L
+            val large = dir.walkTopDown().filter { it.isFile && it.length() >= threshold }
+                .sortedByDescending { it.length() }.take(30).toList()
+            if (large.isEmpty()) return@runCatching "No files larger than ${minSizeMb}MB in ${dir.name}."
+            val total = large.sumOf { it.length() }
+            buildString {
+                appendLine("Largest files (>= ${minSizeMb}MB) in ${dir.name}, total ${formatFileSize(total)}:")
+                large.forEachIndexed { i, f -> appendLine("${i + 1}. ${formatFileSize(f.length())} - ${f.absolutePath}") }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findLargeFiles", it.take(200)) }
+            r.onFailure { logError("findLargeFiles", it) }
+        }
+    }
+
+    override suspend fun findOldFiles(directory: String, olderThanDays: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findOldFiles", "dir=$directory, olderThanDays=$olderThanDays")
+        runCatching {
+            val dir = resolveDirectory(directory)
+            if (!dir.exists() || !dir.isDirectory) return@runCatching "Directory not found: ${dir.absolutePath}"
+            val cutoff = System.currentTimeMillis() - olderThanDays.coerceAtLeast(1) * 24L * 60 * 60 * 1000
+            val old = dir.walkTopDown().filter { it.isFile && it.lastModified() in 1 until cutoff }
+                .sortedBy { it.lastModified() }.take(30).toList()
+            if (old.isEmpty()) return@runCatching "No files older than $olderThanDays days in ${dir.name}."
+            val total = old.sumOf { it.length() }
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            buildString {
+                appendLine("Files older than $olderThanDays days in ${dir.name}, total ${formatFileSize(total)}:")
+                old.forEachIndexed { i, f ->
+                    appendLine("${i + 1}. ${fmt.format(java.util.Date(f.lastModified()))}, ${formatFileSize(f.length())} - ${f.absolutePath}")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findOldFiles", it.take(200)) }
+            r.onFailure { logError("findOldFiles", it) }
+        }
+    }
+
+    override suspend fun findScreenshots(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findScreenshots")
+        runCatching {
+            val dirs = screenshotDirectories().filter { it.exists() && it.isDirectory }
+            if (dirs.isEmpty()) return@runCatching "No screenshot folders found."
+            val shots = dirs.flatMap { it.listFiles()?.filter { f -> f.isFile } ?: emptyList() }
+            if (shots.isEmpty()) return@runCatching "No screenshots found."
+            val total = shots.sumOf { it.length() }
+            val oldest = shots.minByOrNull { it.lastModified() }
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            buildString {
+                appendLine("Found ${shots.size} screenshots taking ${formatFileSize(total)}.")
+                appendLine("Folders: ${dirs.joinToString { it.absolutePath }}")
+                oldest?.let { appendLine("Oldest: ${fmt.format(java.util.Date(it.lastModified()))}") }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findScreenshots", it.take(200)) }
+            r.onFailure { logError("findScreenshots", it) }
+        }
+    }
+
+    override suspend fun cleanupScreenshots(olderThanDays: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("cleanupScreenshots", "olderThanDays=$olderThanDays")
+        runCatching {
+            val cutoff = System.currentTimeMillis() - olderThanDays.coerceAtLeast(0) * 24L * 60 * 60 * 1000
+            val shots = screenshotDirectories().filter { it.exists() }
+                .flatMap { it.listFiles()?.filter { f -> f.isFile && f.lastModified() < cutoff } ?: emptyList() }
+            if (shots.isEmpty()) return@runCatching "No screenshots older than $olderThanDays days to clean up."
+            val trashDir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "AndroidClaw_Trash/Screenshots")
+            if (!trashDir.exists()) trashDir.mkdirs()
+            var moved = 0
+            var freed = 0L
+            for (f in shots) {
+                val dest = java.io.File(trashDir, f.name)
+                val size = f.length()
+                val ok = f.renameTo(dest) || runCatching { f.copyTo(dest, overwrite = false); f.delete() }.getOrDefault(false)
+                if (ok) {
+                    moved++
+                    freed += size
+                }
+            }
+            "Moved $moved old screenshots (${formatFileSize(freed)}) to ${trashDir.absolutePath}. Delete that folder to free the space permanently."
+        }.also { r ->
+            r.onSuccess { logResult("cleanupScreenshots", it) }
+            r.onFailure { logError("cleanupScreenshots", it) }
+        }
+    }
+
+    override suspend fun suggestUnusedApps(days: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("suggestUnusedApps", "days=$days")
+        runCatching {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP_MR1) {
+                return@runCatching "Usage stats require Android 5.1+"
+            }
+            val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? android.app.usage.UsageStatsManager
+                ?: return@runCatching "Usage stats service not available"
+            val end = System.currentTimeMillis()
+            val start = end - days.coerceAtLeast(1) * 24L * 60 * 60 * 1000
+            val stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, end)
+            if (stats.isNullOrEmpty()) {
+                return@runCatching "No usage data available. Enable Usage Access in Settings > Apps > Special access > Usage access."
+            }
+            val lastUsed = mutableMapOf<String, Long>()
+            for (s in stats) {
+                if (s.lastTimeUsed > 0) lastUsed[s.packageName] = maxOf(lastUsed[s.packageName] ?: 0L, s.lastTimeUsed)
+            }
+            val pm = context.packageManager
+            val launchable = pm.getInstalledApplications(0).filter {
+                pm.getLaunchIntentForPackage(it.packageName) != null &&
+                    (it.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) == 0
+            }
+            val unused = launchable.filter { (lastUsed[it.packageName] ?: 0L) < start }
+                .sortedBy { lastUsed[it.packageName] ?: 0L }
+            if (unused.isEmpty()) return@runCatching "No user-installed apps have gone unused in the last $days days."
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+            buildString {
+                appendLine("Apps not used in the last $days days (${unused.size}):")
+                unused.take(25).forEach {
+                    val name = runCatching { pm.getApplicationLabel(it).toString() }.getOrDefault(it.packageName)
+                    val last = lastUsed[it.packageName] ?: 0L
+                    val lastStr = if (last > 0) fmt.format(java.util.Date(last)) else "never in window"
+                    appendLine("  - $name (${it.packageName}) - last used: $lastStr")
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("suggestUnusedApps", it.take(200)) }
+            r.onFailure { logError("suggestUnusedApps", it) }
+        }
+    }
+
+    override suspend fun applyDeviceMode(mode: String): Result<String> {
+        logAction("applyDeviceMode", "mode=$mode")
+        val results = mutableListOf<String>()
+        suspend fun step(label: String, r: Result<String>) {
+            val status = if (r.isSuccess) "done" else "failed (${r.exceptionOrNull()?.message ?: "no permission"})"
+            results.add("  - $label: $status")
+        }
+        when (mode.lowercase().trim()) {
+            "focus", "dnd", "do_not_disturb" -> {
+                step("Do Not Disturb on", setDoNotDisturb(true))
+                step("Ringer silent", setRingerMode("silent"))
+            }
+            "sleep", "bedtime", "night" -> {
+                step("Do Not Disturb on", setDoNotDisturb(true))
+                step("Night light on", setNightLight(true))
+                step("Brightness low", setBrightness(10))
+            }
+            "battery_saver", "battery", "saver" -> {
+                step("Battery saver on", setBatterySaver(true))
+                step("Brightness low", setBrightness(20))
+            }
+            "outdoor", "sunlight" -> {
+                step("Brightness max", setBrightness(100))
+            }
+            "normal", "off", "reset" -> {
+                step("Do Not Disturb off", setDoNotDisturb(false))
+                step("Ringer normal", setRingerMode("normal"))
+            }
+            else -> return Result.failure(IllegalArgumentException("Unknown mode '$mode'. Try: focus, sleep, battery_saver, outdoor, normal."))
+        }
+        return Result.success("Applied '$mode' mode:\n" + results.joinToString("\n"))
+    }
+
+    override suspend fun closeChromeTabs(filter: String): Result<String> {
+        logAction("closeChromeTabs", "filter=$filter")
+        return runCatching {
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to manage Chrome tabs."
+            val launch = context.packageManager.getLaunchIntentForPackage("com.android.chrome")
+                ?: return@runCatching "Chrome is not installed on this device."
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launch)
+            kotlinx.coroutines.delay(1500)
+            service.closeChromeTabs(filter)
+        }.also { r ->
+            r.onSuccess { logResult("closeChromeTabs", it) }
+            r.onFailure { logError("closeChromeTabs", it) }
+        }
+    }
+
+    private fun screenshotDirectories(): List<java.io.File> {
+        val pics = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES)
+        val dcim = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM)
+        return listOf(
+            java.io.File(pics, "Screenshots"),
+            java.io.File(dcim, "Screenshots"),
+        )
+    }
+
+    private fun hashFile(file: java.io.File): String = runCatching {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buf = ByteArray(8192)
+            var read = input.read(buf)
+            while (read >= 0) {
+                md.update(buf, 0, read)
+                read = input.read(buf)
+            }
+        }
+        md.digest().joinToString("") { "%02x".format(it.toInt() and 0xFF) }
+    }.getOrDefault(file.absolutePath)
+
+    // ==========================================
     // Helpers
     // ==========================================
 

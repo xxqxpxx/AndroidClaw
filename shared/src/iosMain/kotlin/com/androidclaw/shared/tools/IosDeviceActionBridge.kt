@@ -362,4 +362,14 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun getRecentlyInstalledApps(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun getRunningApps(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun killBackgroundApp(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- Task automation: cleanup & tidy ---
+    override suspend fun findDuplicateFiles(directory: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findLargeFiles(directory: String, minSizeMb: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findOldFiles(directory: String, olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findScreenshots(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun cleanupScreenshots(olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun suggestUnusedApps(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun applyDeviceMode(mode: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun closeChromeTabs(filter: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }

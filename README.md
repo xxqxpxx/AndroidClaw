@@ -32,6 +32,8 @@ AI-powered Android assistant that fully controls your phone. A smarter replaceme
 
 **Utility** - Alarms, timers, stopwatch, calculator, date/time, coin flip, dice roll, random number, countdown, web search, read webpage, code execution, voice recording, speed test, cast screen, incognito browsing, sort Chrome tabs, find my phone, read aloud (TTS), flashlight SOS, email, wallpaper, font size
 
+**Smart Automation** - Automates tedious chores: find duplicate files, find large/old files, screenshot tidying (move stale shots to a reversible trash folder), surface unused apps, one-shot device "modes" (focus/sleep/battery saver/outdoor/normal), and Chrome tab cleanup (dedupe/close)
+
 ### Additional Features
 
 - **Animated cat mascot** - Pixel art cat that walks when thinking, runs when executing tools
