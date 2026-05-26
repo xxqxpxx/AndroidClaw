@@ -241,7 +241,7 @@ class AutoSendAccessibilityService : AccessibilityService() {
     }
 
     private suspend fun dispatch(gesture: GestureDescription): Boolean = suspendCoroutine { cont ->
-        val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
+        val dispatched = dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(description: GestureDescription?) {
                 cont.resume(true)
             }
