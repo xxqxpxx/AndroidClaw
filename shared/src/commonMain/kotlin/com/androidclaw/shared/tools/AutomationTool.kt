@@ -24,6 +24,13 @@ class AutomationTool(
         | - suggest_unused_apps: list user apps not opened in the last days (needs Usage Access)
         | - apply_mode: apply a bundle of settings at once (focus, sleep, battery_saver, outdoor, normal)
         | - close_chrome_tabs: close duplicate tabs (filter=duplicates) or all-but-one (filter=all); needs accessibility
+        | - find_blurry_photos: scan DCIM/Pictures and list likely-blurry photos
+        | - find_similar_photos: group visually near-duplicate photos (perceptual hash)
+        | - cleanup_photos: move blurry photos (criteria=blurry) into a reversible trash folder
+        | - clear_notifications_from_app: dismiss active notifications from a package_name
+        | - clear_notifications_by_keyword: dismiss active notifications matching a keyword
+        | - delete_old_sms: delete SMS older than older_than_days (needs default-SMS-app role)
+        | - run_routine: run a bundle of cleanup checks at once (routine=storage or full)
         |The 'directory' accepts named folders (Downloads, Pictures, DCIM, Documents, Music, Movies, Camera) or an absolute path.""".trimMargin()
 
     override val inputSchema = buildJsonObject {
@@ -36,6 +43,9 @@ class AutomationTool(
                     add("find_duplicate_files"); add("find_large_files"); add("find_old_files")
                     add("find_screenshots"); add("cleanup_screenshots")
                     add("suggest_unused_apps"); add("apply_mode"); add("close_chrome_tabs")
+                    add("find_blurry_photos"); add("find_similar_photos"); add("cleanup_photos")
+                    add("clear_notifications_from_app"); add("clear_notifications_by_keyword")
+                    add("delete_old_sms"); add("run_routine")
                 }
             }
             putJsonObject("directory") {
@@ -63,6 +73,28 @@ class AutomationTool(
                 put("type", "string")
                 putJsonArray("enum") { add("duplicates"); add("all") }
                 put("description", "Which Chrome tabs to close for close_chrome_tabs (default duplicates)")
+            }
+            putJsonObject("limit") {
+                put("type", "integer")
+                put("description", "Max photos to scan for find_blurry_photos / find_similar_photos (default 200)")
+            }
+            putJsonObject("criteria") {
+                put("type", "string")
+                putJsonArray("enum") { add("blurry") }
+                put("description", "What to clean for cleanup_photos (currently 'blurry')")
+            }
+            putJsonObject("package_name") {
+                put("type", "string")
+                put("description", "App package for clear_notifications_from_app")
+            }
+            putJsonObject("keyword") {
+                put("type", "string")
+                put("description", "Keyword to match for clear_notifications_by_keyword")
+            }
+            putJsonObject("routine") {
+                put("type", "string")
+                putJsonArray("enum") { add("storage"); add("full") }
+                put("description", "Which cleanup bundle to run for run_routine")
             }
         }
         putJsonArray("required") { add("action") }
@@ -101,6 +133,36 @@ class AutomationTool(
             "close_chrome_tabs" -> {
                 val filter = input["filter"]?.jsonPrimitive?.contentOrNull ?: "duplicates"
                 bridge.closeChromeTabs(filter)
+            }
+            "find_blurry_photos" -> {
+                val limit = input["limit"]?.jsonPrimitive?.intOrNull ?: 200
+                bridge.findBlurryPhotos(limit)
+            }
+            "find_similar_photos" -> {
+                val limit = input["limit"]?.jsonPrimitive?.intOrNull ?: 200
+                bridge.findSimilarPhotos(limit)
+            }
+            "cleanup_photos" -> {
+                val criteria = input["criteria"]?.jsonPrimitive?.contentOrNull ?: "blurry"
+                bridge.cleanupPhotos(criteria)
+            }
+            "clear_notifications_from_app" -> {
+                val pkg = input["package_name"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing package_name", isError = true)
+                bridge.clearNotificationsFromApp(pkg)
+            }
+            "clear_notifications_by_keyword" -> {
+                val keyword = input["keyword"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing keyword", isError = true)
+                bridge.clearNotificationsByKeyword(keyword)
+            }
+            "delete_old_sms" -> {
+                val days = input["older_than_days"]?.jsonPrimitive?.intOrNull ?: 365
+                bridge.deleteOldSms(days)
+            }
+            "run_routine" -> {
+                val routine = input["routine"]?.jsonPrimitive?.contentOrNull ?: "storage"
+                bridge.runCleanupRoutine(routine)
             }
             else -> return ToolResult("Unknown action: $action", isError = true)
         }

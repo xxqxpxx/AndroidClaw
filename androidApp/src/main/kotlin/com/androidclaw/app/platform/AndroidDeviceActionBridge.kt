@@ -49,6 +49,11 @@ class AndroidDeviceActionBridge(
     companion object {
         private const val TAG = "DeviceBridge"
 
+        // Photo analysis tuning: Laplacian-variance sharpness below this is "blurry";
+        // average-hash Hamming distance at/under this counts photos as visually similar.
+        private const val BLUR_THRESHOLD = 120.0
+        private const val SIMILAR_HAMMING = 5
+
         private val APP_NAMES = mapOf(
             "com.whatsapp" to "WhatsApp",
             "org.telegram.messenger" to "Telegram",
@@ -5595,6 +5600,260 @@ class AndroidDeviceActionBridge(
             r.onSuccess { logResult("closeChromeTabs", it) }
             r.onFailure { logError("closeChromeTabs", it) }
         }
+    }
+
+    override suspend fun findBlurryPhotos(limit: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findBlurryPhotos", "limit=$limit")
+        runCatching {
+            val photos = photoFiles(limit)
+            if (photos.isEmpty()) return@runCatching "No photos found in DCIM/Pictures."
+            val scored = photos.mapNotNull { f ->
+                val bmp = decodeSmall(f) ?: return@mapNotNull null
+                val score = blurScore(bmp)
+                bmp.recycle()
+                f to score
+            }.sortedBy { it.second }
+            val blurry = scored.filter { it.second < BLUR_THRESHOLD }
+            if (blurry.isEmpty()) {
+                return@runCatching "Scanned ${scored.size} photos; none look clearly blurry (sharpness threshold $BLUR_THRESHOLD)."
+            }
+            buildString {
+                appendLine("Likely blurry photos (${blurry.size} of ${scored.size} scanned, lower score = blurrier):")
+                blurry.take(25).forEach { (f, s) -> appendLine("  - sharpness ${"%.0f".format(s)} - ${f.absolutePath}") }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findBlurryPhotos", it.take(200)) }
+            r.onFailure { logError("findBlurryPhotos", it) }
+        }
+    }
+
+    override suspend fun findSimilarPhotos(limit: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("findSimilarPhotos", "limit=$limit")
+        runCatching {
+            val photos = photoFiles(limit)
+            if (photos.isEmpty()) return@runCatching "No photos found in DCIM/Pictures."
+            val hashes = photos.mapNotNull { f ->
+                val bmp = decodeSmall(f, 32) ?: return@mapNotNull null
+                val h = aHash(bmp)
+                bmp.recycle()
+                f to h
+            }
+            // Greedy grouping by Hamming distance.
+            val used = BooleanArray(hashes.size)
+            val groups = mutableListOf<List<java.io.File>>()
+            for (i in hashes.indices) {
+                if (used[i]) continue
+                val group = mutableListOf(hashes[i].first)
+                for (j in i + 1 until hashes.size) {
+                    if (used[j]) continue
+                    val dist = java.lang.Long.bitCount(hashes[i].second xor hashes[j].second)
+                    if (dist <= SIMILAR_HAMMING) {
+                        group.add(hashes[j].first)
+                        used[j] = true
+                    }
+                }
+                if (group.size > 1) groups.add(group)
+            }
+            if (groups.isEmpty()) return@runCatching "No visually similar photos found among ${hashes.size} scanned."
+            buildString {
+                appendLine("Found ${groups.size} group(s) of similar photos:")
+                groups.sortedByDescending { it.size }.take(15).forEachIndexed { i, g ->
+                    appendLine("${i + 1}. ${g.size} similar:")
+                    g.forEach { appendLine("   - ${it.absolutePath}") }
+                }
+            }.trim()
+        }.also { r ->
+            r.onSuccess { logResult("findSimilarPhotos", it.take(200)) }
+            r.onFailure { logError("findSimilarPhotos", it) }
+        }
+    }
+
+    override suspend fun cleanupPhotos(criteria: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("cleanupPhotos", "criteria=$criteria")
+        runCatching {
+            if (!criteria.equals("blurry", ignoreCase = true)) {
+                return@runCatching "Unsupported criteria '$criteria'. Currently only 'blurry' is supported."
+            }
+            val photos = photoFiles(500)
+            val trashDir = java.io.File(android.os.Environment.getExternalStorageDirectory(), "AndroidClaw_Trash/Photos")
+            if (!trashDir.exists()) trashDir.mkdirs()
+            var moved = 0
+            var freed = 0L
+            for (f in photos) {
+                val bmp = decodeSmall(f) ?: continue
+                val score = blurScore(bmp)
+                bmp.recycle()
+                if (score < BLUR_THRESHOLD) {
+                    val dest = java.io.File(trashDir, f.name)
+                    val size = f.length()
+                    val ok = f.renameTo(dest) || runCatching { f.copyTo(dest, overwrite = false); f.delete() }.getOrDefault(false)
+                    if (ok) {
+                        moved++
+                        freed += size
+                    }
+                }
+            }
+            if (moved == 0) "No clearly blurry photos found to clean up."
+            else "Moved $moved blurry photos (${formatFileSize(freed)}) to ${trashDir.absolutePath}. Review and delete that folder to free the space."
+        }.also { r ->
+            r.onSuccess { logResult("cleanupPhotos", it) }
+            r.onFailure { logError("cleanupPhotos", it) }
+        }
+    }
+
+    override suspend fun clearNotificationsFromApp(packageName: String): Result<String> {
+        logAction("clearNotificationsFromApp", "packageName=$packageName")
+        return runCatching {
+            val svc = com.androidclaw.app.service.ClawNotificationListenerService.instance
+                ?: return@runCatching "Notification access not enabled. Enable AndroidClaw in Settings > Notifications > Notification access."
+            val n = svc.dismissFromPackage(packageName)
+            "Dismissed $n notification(s) from $packageName."
+        }.also { r ->
+            r.onSuccess { logResult("clearNotificationsFromApp", it) }
+            r.onFailure { logError("clearNotificationsFromApp", it) }
+        }
+    }
+
+    override suspend fun clearNotificationsByKeyword(keyword: String): Result<String> {
+        logAction("clearNotificationsByKeyword", "keyword=$keyword")
+        return runCatching {
+            val svc = com.androidclaw.app.service.ClawNotificationListenerService.instance
+                ?: return@runCatching "Notification access not enabled. Enable AndroidClaw in Settings > Notifications > Notification access."
+            val n = svc.dismissByKeyword(keyword)
+            "Dismissed $n notification(s) matching \"$keyword\"."
+        }.also { r ->
+            r.onSuccess { logResult("clearNotificationsByKeyword", it) }
+            r.onFailure { logError("clearNotificationsByKeyword", it) }
+        }
+    }
+
+    override suspend fun deleteOldSms(olderThanDays: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("deleteOldSms", "olderThanDays=$olderThanDays")
+        runCatching {
+            val cutoff = System.currentTimeMillis() - olderThanDays.coerceAtLeast(1) * 24L * 60 * 60 * 1000
+            val deleted = context.contentResolver.delete(
+                android.provider.Telephony.Sms.CONTENT_URI,
+                "${android.provider.Telephony.Sms.DATE} < ?",
+                arrayOf(cutoff.toString())
+            )
+            if (deleted > 0) "Deleted $deleted SMS message(s) older than $olderThanDays days."
+            else "No SMS older than $olderThanDays days were deleted. (Deleting SMS requires AndroidClaw to be the default SMS app.)"
+        }.also { r ->
+            r.onSuccess { logResult("deleteOldSms", it) }
+            r.onFailure { logError("deleteOldSms", it) }
+        }
+    }
+
+    override suspend fun runCleanupRoutine(routine: String): Result<String> {
+        logAction("runCleanupRoutine", "routine=$routine")
+        val sb = StringBuilder()
+        suspend fun add(title: String, r: Result<String>) {
+            sb.appendLine("== $title ==")
+            sb.appendLine(r.getOrElse { "failed: ${it.message}" })
+            sb.appendLine()
+        }
+        when (routine.lowercase().trim()) {
+            "storage", "files" -> {
+                add("Duplicate files (Downloads)", findDuplicateFiles("Downloads"))
+                add("Large files (Downloads)", findLargeFiles("Downloads", 50))
+                add("Old files (Downloads)", findOldFiles("Downloads", 180))
+                add("Screenshots", findScreenshots())
+            }
+            "full", "weekly", "deep" -> {
+                add("Duplicate files (Downloads)", findDuplicateFiles("Downloads"))
+                add("Large files (Downloads)", findLargeFiles("Downloads", 50))
+                add("Screenshots", findScreenshots())
+                add("Similar photos", findSimilarPhotos(200))
+                add("Unused apps", suggestUnusedApps(30))
+                add("Storage breakdown", getStorageBreakdown())
+            }
+            else -> return Result.failure(IllegalArgumentException("Unknown routine '$routine'. Try: storage, full."))
+        }
+        return Result.success(sb.toString().trim())
+    }
+
+    private fun photoFiles(limit: Int): List<java.io.File> {
+        val imageExts = setOf("jpg", "jpeg", "png", "webp", "heic", "heif", "bmp")
+        val roots = listOf(
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM),
+            android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES),
+        ).filter { it.exists() && it.isDirectory }
+        return roots.asSequence()
+            .flatMap { it.walkTopDown() }
+            .filter { it.isFile && it.extension.lowercase() in imageExts && it.length() > 0 }
+            .sortedByDescending { it.lastModified() }
+            .take(limit.coerceAtLeast(1))
+            .toList()
+    }
+
+    private fun decodeSmall(file: java.io.File, maxDim: Int = 256): android.graphics.Bitmap? {
+        return try {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+            val w = bounds.outWidth
+            val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return null
+            var sample = 1
+            while (w / sample > maxDim || h / sample > maxDim) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Variance of the Laplacian — higher means sharper, lower means blurrier. */
+    private fun blurScore(bmp: android.graphics.Bitmap): Double {
+        val w = bmp.width
+        val h = bmp.height
+        if (w < 3 || h < 3) return Double.MAX_VALUE
+        val gray = DoubleArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                val c = bmp.getPixel(x, y)
+                val r = (c shr 16) and 0xFF
+                val g = (c shr 8) and 0xFF
+                val b = c and 0xFF
+                gray[y * w + x] = 0.299 * r + 0.587 * g + 0.114 * b
+            }
+        }
+        var sum = 0.0
+        var sumSq = 0.0
+        var n = 0
+        for (y in 1 until h - 1) {
+            for (x in 1 until w - 1) {
+                val lap = gray[y * w + x] * 4 - gray[(y - 1) * w + x] - gray[(y + 1) * w + x] -
+                    gray[y * w + x - 1] - gray[y * w + x + 1]
+                sum += lap
+                sumSq += lap * lap
+                n++
+            }
+        }
+        if (n == 0) return Double.MAX_VALUE
+        val mean = sum / n
+        return sumSq / n - mean * mean
+    }
+
+    /** 64-bit average hash for perceptual similarity. */
+    private fun aHash(bmp: android.graphics.Bitmap): Long {
+        val small = android.graphics.Bitmap.createScaledBitmap(bmp, 8, 8, true)
+        val lums = IntArray(64)
+        var sum = 0L
+        for (y in 0 until 8) {
+            for (x in 0 until 8) {
+                val c = small.getPixel(x, y)
+                val lum = ((c shr 16 and 0xFF) + (c shr 8 and 0xFF) + (c and 0xFF)) / 3
+                lums[y * 8 + x] = lum
+                sum += lum
+            }
+        }
+        if (small != bmp) small.recycle()
+        val avg = sum / 64
+        var hash = 0L
+        for (i in 0 until 64) {
+            if (lums[i] >= avg) hash = hash or (1L shl i)
+        }
+        return hash
     }
 
     private fun screenshotDirectories(): List<java.io.File> {

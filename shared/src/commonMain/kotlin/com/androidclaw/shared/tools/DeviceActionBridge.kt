@@ -333,4 +333,13 @@ interface DeviceActionBridge {
     suspend fun suggestUnusedApps(days: Int = 30): Result<String>
     suspend fun applyDeviceMode(mode: String): Result<String> // focus, sleep, battery_saver, outdoor, normal
     suspend fun closeChromeTabs(filter: String = "duplicates"): Result<String> // duplicates, all
+
+    // --- Task automation: photo intelligence, notifications, messaging, routines ---
+    suspend fun findBlurryPhotos(limit: Int = 200): Result<String>
+    suspend fun findSimilarPhotos(limit: Int = 200): Result<String>
+    suspend fun cleanupPhotos(criteria: String = "blurry"): Result<String> // blurry
+    suspend fun clearNotificationsFromApp(packageName: String): Result<String>
+    suspend fun clearNotificationsByKeyword(keyword: String): Result<String>
+    suspend fun deleteOldSms(olderThanDays: Int = 365): Result<String>
+    suspend fun runCleanupRoutine(routine: String): Result<String> // storage, full
 }

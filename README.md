@@ -32,7 +32,7 @@ AI-powered Android assistant that fully controls your phone. A smarter replaceme
 
 **Utility** - Alarms, timers, stopwatch, calculator, date/time, coin flip, dice roll, random number, countdown, web search, read webpage, code execution, voice recording, speed test, cast screen, incognito browsing, sort Chrome tabs, find my phone, read aloud (TTS), flashlight SOS, email, wallpaper, font size
 
-**Smart Automation** - Automates tedious chores: find duplicate files, find large/old files, screenshot tidying (move stale shots to a reversible trash folder), surface unused apps, one-shot device "modes" (focus/sleep/battery saver/outdoor/normal), and Chrome tab cleanup (dedupe/close)
+**Smart Automation** - Automates tedious chores: find duplicate files, find large/old files, screenshot tidying (move stale shots to a reversible trash folder), surface unused apps, one-shot device "modes" (focus/sleep/battery saver/outdoor/normal), Chrome tab cleanup (dedupe/close), photo intelligence (detect blurry & visually-similar photos, clean up blurry ones), filtered notification clearing (by app or keyword), old-SMS cleanup, and one-command cleanup routines (storage/full)
 
 ### Additional Features
 

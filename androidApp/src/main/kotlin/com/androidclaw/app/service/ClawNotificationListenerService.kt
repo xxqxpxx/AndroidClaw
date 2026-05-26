@@ -134,6 +134,36 @@ class ClawNotificationListenerService : NotificationListenerService() {
         }
     }
 
+    /** Dismiss all currently active notifications from a given package. Returns count dismissed. */
+    fun dismissFromPackage(packageName: String): Int {
+        return try {
+            val matches = activeNotifications?.filter { it.packageName == packageName } ?: emptyList()
+            matches.forEach { cancelNotification(it.key) }
+            matches.size
+        } catch (e: Exception) {
+            Log.e(TAG, "dismissFromPackage failed", e)
+            0
+        }
+    }
+
+    /** Dismiss active notifications whose title, text, or package contains the keyword. Returns count. */
+    fun dismissByKeyword(keyword: String): Int {
+        return try {
+            val kw = keyword.lowercase()
+            val matches = activeNotifications?.filter { sbn ->
+                val extras = sbn.notification.extras
+                val title = extras?.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.lowercase() ?: ""
+                val text = extras?.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.lowercase() ?: ""
+                title.contains(kw) || text.contains(kw) || sbn.packageName.lowercase().contains(kw)
+            } ?: emptyList()
+            matches.forEach { cancelNotification(it.key) }
+            matches.size
+        } catch (e: Exception) {
+            Log.e(TAG, "dismissByKeyword failed", e)
+            0
+        }
+    }
+
     private fun StatusBarNotification.toSnapshot(): NotificationSnapshot {
         val extras = notification.extras
         val appName = try {
