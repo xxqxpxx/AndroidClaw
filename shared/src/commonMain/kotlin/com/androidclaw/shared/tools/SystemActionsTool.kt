@@ -13,7 +13,8 @@ class SystemActionsTool(
 
     override val description = """Perform system-level actions: navigation (home/back/recents), screenshots, notifications,
         |settings pages, DND, auto-rotate, directions, email, media control, camera, QR scan,
-        |split screen, power menu, orientation lock, notes, app management (uninstall/force-stop/info).""".trimMargin()
+        |split screen, power menu, orientation lock, notes, app management (uninstall/force-stop/info),
+        |sort Chrome browser tabs alphabetically (sort_chrome_tabs).""".trimMargin()
 
     override val inputSchema = buildJsonObject {
         put("type", "object")
@@ -60,6 +61,8 @@ class SystemActionsTool(
                     add("coin_flip"); add("roll_dice"); add("random_number"); add("countdown")
                     // Recording
                     add("voice_record"); add("speed_test"); add("cast_screen"); add("incognito")
+                    // Browser
+                    add("sort_chrome_tabs")
                     // Emergency
                     add("emergency_call")
                     // Info
@@ -204,6 +207,11 @@ class SystemActionsTool(
             putJsonObject("reminder_id") {
                 put("type", "string")
                 put("description", "Reminder ID for complete_reminder")
+            }
+            putJsonObject("sort_order") {
+                put("type", "string")
+                putJsonArray("enum") { add("alphabetical"); add("reverse_alphabetical") }
+                put("description", "Order for sort_chrome_tabs: alphabetical (A-Z) or reverse_alphabetical (Z-A). Default alphabetical. Requires the AndroidClaw accessibility service.")
             }
         }
         putJsonArray("required") { add("action") }
@@ -360,6 +368,10 @@ class SystemActionsTool(
             "speed_test" -> bridge.openSpeedTest()
             "cast_screen" -> bridge.castScreen()
             "incognito" -> bridge.openIncognito()
+            "sort_chrome_tabs" -> {
+                val order = input["sort_order"]?.jsonPrimitive?.contentOrNull ?: "alphabetical"
+                bridge.sortChromeTabs(order)
+            }
 
             // Emergency
             "emergency_call" -> bridge.emergencyCall()

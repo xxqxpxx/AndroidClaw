@@ -161,6 +161,7 @@ interface DeviceActionBridge {
     suspend fun openSpeedTest(): Result<String>
     suspend fun castScreen(): Result<String>
     suspend fun openIncognito(): Result<String>
+    suspend fun sortChromeTabs(order: String = "alphabetical"): Result<String> // alphabetical, reverse_alphabetical
 
     // Emergency & calls
     suspend fun emergencyCall(): Result<String>
