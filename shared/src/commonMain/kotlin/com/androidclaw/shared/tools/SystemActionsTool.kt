@@ -2,6 +2,7 @@ package com.androidclaw.shared.tools
 
 import com.androidclaw.shared.agent.Tool
 import com.androidclaw.shared.agent.ToolResult
+import kotlinx.datetime.Clock
 import kotlinx.serialization.json.*
 
 class SystemActionsTool(
@@ -396,7 +397,7 @@ class SystemActionsTool(
                     ?: input["text"]?.jsonPrimitive?.contentOrNull
                     ?: return ToolResult("Missing reminder text", isError = true)
                 val time = input["reminder_time"]?.jsonPrimitive?.longOrNull
-                    ?: (System.currentTimeMillis() + 3600000) // default 1 hour from now
+                    ?: (Clock.System.now().toEpochMilliseconds() + 3600000) // default 1 hour from now
                 bridge.createReminder(text, time)
             }
 
