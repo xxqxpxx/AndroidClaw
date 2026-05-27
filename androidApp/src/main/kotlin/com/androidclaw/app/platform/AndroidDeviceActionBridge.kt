@@ -355,6 +355,7 @@ class AndroidDeviceActionBridge(
                 putExtra(AlarmClock.EXTRA_HOUR, hour)
                 putExtra(AlarmClock.EXTRA_MINUTES, minute)
                 if (label.isNotEmpty()) putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true) // create the alarm without requiring a Save tap
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 // Force Google Clock to avoid third-party apps intercepting
                 val clockPackages = listOf(
@@ -385,6 +386,7 @@ class AndroidDeviceActionBridge(
             val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
                 putExtra(AlarmClock.EXTRA_LENGTH, seconds)
                 if (label.isNotEmpty()) putExtra(AlarmClock.EXTRA_MESSAGE, label)
+                putExtra(AlarmClock.EXTRA_SKIP_UI, true) // start the timer without requiring a Start tap
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 val clockPackages = listOf(
                     "com.google.android.deskclock",

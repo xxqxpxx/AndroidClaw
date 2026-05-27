@@ -294,6 +294,7 @@ class AppIntegrationTool(
         "dropbox" to AppInfo("com.dropbox.android", "https://www.dropbox.com"),
         "onedrive" to AppInfo("com.microsoft.skydrive"),
         "chrome" to AppInfo("com.android.chrome"),
+        "google" to AppInfo("com.google.android.googlequicksearchbox", "https://www.google.com"),
         "firefox" to AppInfo("org.mozilla.firefox"),
         "opera" to AppInfo("com.opera.browser"),
         "brave" to AppInfo("com.brave.browser"),
@@ -2431,6 +2432,14 @@ class AppIntegrationTool(
                     val q = param("query") ?: return null
                     "googlechrome://navigate?url=${encode("https://www.google.com/search?q=${encode(q)}")}"
                 }
+                else -> null
+            }
+            "google" -> when (action) {
+                "search", "open" -> {
+                    val q = param("query") ?: return null
+                    "https://www.google.com/search?q=${encode(q)}"
+                }
+                "open_url", "browse" -> param("url")
                 else -> null
             }
             "firefox" -> when (action) {
