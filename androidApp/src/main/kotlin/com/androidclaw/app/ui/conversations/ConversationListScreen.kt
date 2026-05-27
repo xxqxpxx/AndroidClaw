@@ -319,7 +319,7 @@ private fun ConversationItem(
             if (conversation.lastMessage != null) {
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = conversation.lastMessage,
+                    text = conversation.lastMessage!!,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

@@ -20,6 +20,10 @@ class AudioRecorder(private val context: Context) {
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         const val FRAME_SIZE = 512 // samples per frame
+
+        fun shortsToFloats(shorts: ShortArray): FloatArray {
+            return FloatArray(shorts.size) { shorts[it] / 32768f }
+        }
     }
 
     private var audioRecord: AudioRecord? = null
@@ -65,11 +69,5 @@ class AudioRecorder(private val context: Context) {
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
-    }
-
-    companion object ShortArrayUtils {
-        fun shortsToFloats(shorts: ShortArray): FloatArray {
-            return FloatArray(shorts.size) { shorts[it] / 32768f }
-        }
     }
 }
