@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
     alias(libs.plugins.kotlinMultiplatform)
+    alias(libs.plugins.kotlinSerialization)
     // Firebase plugins are applied conditionally below; google-services.json
     // is not committed (see .gitignore), so they must not run without it.
     alias(libs.plugins.googleServices) apply false

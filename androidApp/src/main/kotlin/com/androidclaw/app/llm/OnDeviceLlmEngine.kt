@@ -158,6 +158,7 @@ class OnDeviceLlmEngine(private val context: Context) {
             for (block in msg.content) {
                 when (block) {
                     is ContentBlock.Text -> sb.appendLine(block.text)
+                    is ContentBlock.Image -> sb.appendLine("[image]")
                     is ContentBlock.ToolUse -> sb.appendLine("Using tool ${block.name}: ${block.input}")
                     is ContentBlock.ToolResult -> sb.appendLine("Tool result: ${block.content}")
                 }

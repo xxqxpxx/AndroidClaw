@@ -5,14 +5,13 @@ import android.graphics.Bitmap
 import android.os.Build
 import android.util.Base64
 import android.util.Log
-import io.ktor.client.*
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.http.content.TextContent
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import kotlin.coroutines.resume
@@ -27,7 +26,6 @@ import kotlin.coroutines.resume
  * Inspired by droidclaw's perception → reasoning → action loop.
  */
 class VisionService(
-    private val httpClient: HttpClient,
     private val apiKey: String
 ) {
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
@@ -54,8 +52,8 @@ class VisionService(
             service.takeScreenshot(
                 android.view.Display.DEFAULT_DISPLAY,
                 executor,
-                object : AccessibilityService.TakeScreenshotCallback() {
-                    override fun onSuccess(result: ScreenshotResult) {
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
                         val hardwareBuffer = result.hardwareBuffer
                         val colorSpace = result.colorSpace
                         val bitmap = Bitmap.wrapHardwareBuffer(hardwareBuffer, colorSpace)
@@ -92,6 +90,38 @@ class VisionService(
         scaled.compress(Bitmap.CompressFormat.JPEG, 80, stream)
         if (scaled !== bitmap) scaled.recycle()
         return Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+    }
+
+    /**
+     * Makes a POST request to the Anthropic API using HttpURLConnection.
+     */
+    private suspend fun postToAnthropic(requestBody: JsonObject): String? = withContext(Dispatchers.IO) {
+        try {
+            val url = URL(ANTHROPIC_API_URL)
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "POST"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("x-api-key", apiKey)
+            connection.setRequestProperty("anthropic-version", ANTHROPIC_VERSION)
+            connection.doOutput = true
+            connection.connectTimeout = 30000
+            connection.readTimeout = 60000
+
+            connection.outputStream.use { os ->
+                os.write(requestBody.toString().toByteArray(Charsets.UTF_8))
+            }
+
+            val responseCode = connection.responseCode
+            if (responseCode != 200) {
+                Log.e(TAG, "Vision API failed with HTTP $responseCode")
+                return@withContext null
+            }
+
+            connection.inputStream.bufferedReader().use { it.readText() }
+        } catch (e: Exception) {
+            Log.e(TAG, "Vision API request failed: ${e.message}", e)
+            null
+        }
     }
 
     /**
@@ -137,18 +167,7 @@ class VisionService(
         }
 
         return try {
-            val response = httpClient.post(ANTHROPIC_API_URL) {
-                setBody(TextContent(requestBody.toString(), ContentType.Application.Json))
-                header("x-api-key", apiKey)
-                header("anthropic-version", ANTHROPIC_VERSION)
-            }
-
-            if (!response.status.isSuccess()) {
-                Log.e(TAG, "Vision API failed: ${response.status}")
-                return null
-            }
-
-            val responseBody = response.bodyAsText()
+            val responseBody = postToAnthropic(requestBody) ?: return null
             val responseJson = json.parseToJsonElement(responseBody).jsonObject
             val content = responseJson["content"]?.jsonArray?.firstOrNull()?.jsonObject
             val text = content?.get("text")?.jsonPrimitive?.contentOrNull ?: return null
@@ -210,13 +229,7 @@ class VisionService(
         }
 
         return try {
-            val response = httpClient.post(ANTHROPIC_API_URL) {
-                setBody(TextContent(requestBody.toString(), ContentType.Application.Json))
-                header("x-api-key", apiKey)
-                header("anthropic-version", ANTHROPIC_VERSION)
-            }
-            if (!response.status.isSuccess()) return null
-            val responseBody = response.bodyAsText()
+            val responseBody = postToAnthropic(requestBody) ?: return null
             val responseJson = json.parseToJsonElement(responseBody).jsonObject
             responseJson["content"]?.jsonArray?.firstOrNull()?.jsonObject
                 ?.get("text")?.jsonPrimitive?.contentOrNull

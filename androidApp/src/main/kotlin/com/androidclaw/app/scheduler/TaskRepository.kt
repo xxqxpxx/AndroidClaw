@@ -54,7 +54,7 @@ class TaskRepository(private val driver: SqlDriver) {
             bindString(2, description)
             bindString(3, triggerType)
             bindLong(4, triggerTime)
-            if (repeatIntervalMs != null) bindLong(5, repeatIntervalMs) else bindNull(5)
+            if (repeatIntervalMs != null) bindLong(5, repeatIntervalMs) else bindLong(5, null)
             bindString(6, steps)
             bindLong(7, triggerTime)
             bindLong(8, now)

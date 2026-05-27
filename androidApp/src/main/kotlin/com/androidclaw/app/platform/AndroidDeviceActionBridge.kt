@@ -6035,10 +6035,7 @@ class AndroidDeviceActionBridge(
             } catch (_: Exception) { null }
             val apiKey = settings?.apiKey?.value ?: return null
             if (apiKey.isBlank()) return null
-            val httpClient = try {
-                org.koin.java.KoinJavaComponent.getKoin().get<io.ktor.client.HttpClient>()
-            } catch (_: Exception) { return null }
-            visionService = com.androidclaw.app.vision.VisionService(httpClient, apiKey)
+            visionService = com.androidclaw.app.vision.VisionService(apiKey)
         }
         return visionService
     }

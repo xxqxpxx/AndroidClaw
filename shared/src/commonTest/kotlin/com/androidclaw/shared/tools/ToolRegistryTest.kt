@@ -341,4 +341,29 @@ private class TestDeviceActionBridge : DeviceActionBridge {
     override suspend fun clearNotificationsByKeyword(keyword: String) = Result.success("ok")
     override suspend fun deleteOldSms(olderThanDays: Int) = Result.success("ok")
     override suspend fun runCleanupRoutine(routine: String) = Result.success("ok")
+
+    // Vision
+    override suspend fun visionDescribeScreen() = Result.success("ok")
+    override suspend fun visionFindAndTap(target: String) = Result.success("ok")
+    override suspend fun visionTapCoordinates(x: Int, y: Int) = Result.success("ok")
+    override suspend fun visionScroll(direction: String) = Result.success("ok")
+    override suspend fun visionGoBack() = Result.success("ok")
+    override suspend fun visionRecovery() = Result.success("ok")
+    override suspend fun visionStatus() = Result.success("ok")
+    override suspend fun visionResetGoal() = Result.success("ok")
+
+    // Scheduler
+    override suspend fun scheduleTask(name: String, description: String, triggerTimeMs: Long, repeatIntervalMs: Long, steps: String) = Result.success("ok")
+    override suspend fun listScheduledTasks() = Result.success("ok")
+    override suspend fun cancelScheduledTask(taskId: String) = Result.success("ok")
+    override suspend fun getTaskHistory(limit: Int) = Result.success("ok")
+    override suspend fun runTaskNow(taskId: String) = Result.success("ok")
+
+    // Skills
+    override suspend fun skillsList() = Result.success("ok")
+    override suspend fun skillsRun(nameOrTrigger: String) = Result.success("ok")
+    override suspend fun skillsCreate(name: String, description: String, trigger: String, schedule: String, stepsJson: String) = Result.success("ok")
+    override suspend fun skillsDelete(id: String) = Result.success("ok")
+    override suspend fun skillsExport(id: String) = Result.success("ok")
+    override suspend fun skillsImport(jsonStr: String) = Result.success("ok")
 }
