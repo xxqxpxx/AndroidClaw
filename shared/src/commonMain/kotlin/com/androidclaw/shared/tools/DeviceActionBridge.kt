@@ -144,6 +144,9 @@ interface DeviceActionBridge {
     // Ride-hailing
     suspend fun orderRide(destination: String, service: String = "uber"): Result<String>
 
+    // Music: actually start playback for a search query (not just open search)
+    suspend fun playMusic(query: String, app: String = ""): Result<String>
+
     // Email reading (via notification capture)
     suspend fun getEmailNotifications(count: Int = 10): Result<String>
 

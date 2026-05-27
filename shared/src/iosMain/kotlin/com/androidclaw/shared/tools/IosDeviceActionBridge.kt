@@ -197,6 +197,7 @@ class IosDeviceActionBridge : DeviceActionBridge {
 
     // Ride-hailing
     override suspend fun orderRide(destination: String, service: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun playMusic(query: String, app: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 
     // Email reading
     override suspend fun getEmailNotifications(count: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))

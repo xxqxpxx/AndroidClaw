@@ -212,6 +212,7 @@ private class TestDeviceActionBridge : DeviceActionBridge {
     override suspend fun moveFile(sourcePath: String, destDirectory: String) = Result.success("ok")
     override suspend fun organizeFiles(directory: String) = Result.success("ok")
     override suspend fun orderRide(destination: String, service: String) = Result.success("ok")
+    override suspend fun playMusic(query: String, app: String) = Result.success("ok")
     override suspend fun getEmailNotifications(count: Int) = Result.success("ok")
     override suspend fun openDeepLink(uri: String, packageName: String?, fallbackUrl: String?) = Result.success("ok")
     override suspend fun coinFlip() = Result.success("ok")

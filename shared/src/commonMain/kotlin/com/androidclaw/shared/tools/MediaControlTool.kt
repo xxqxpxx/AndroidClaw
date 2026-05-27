@@ -13,14 +13,18 @@ class MediaControlTool(
     override val description = """Control media playback and play music/videos on streaming apps.
         |
         |Playback controls: play_pause, next_track, previous_track, stop
-        |Streaming: play_on_spotify, play_on_youtube_music, play_on_youtube, play_on_app
+        |Streaming: play_music (starts playback directly), play_on_spotify, play_on_youtube_music, play_on_youtube, play_on_app
         |
         |Examples:
         |  - Play/pause current media: action=play_pause
+        |  - Play a song (any/best music app): action=play_music, query="Shape of You", app="spotify"
         |  - Play a song on Spotify: action=play_on_spotify, query="Shape of You Ed Sheeran"
         |  - Play on YouTube Music: action=play_on_youtube_music, query="lofi beats"
         |  - Play on YouTube: action=play_on_youtube, query="coding tutorial"
         |  - Play on any music app: action=play_on_app, query="jazz", package_name="com.apple.android.music"
+        |
+        |Note: play_music / play_on_spotify / play_on_youtube_music start playback of the best match
+        |directly (via the system play-from-search intent), rather than only opening a search.
     """.trimMargin()
 
     override val inputSchema = buildJsonObject {
@@ -30,6 +34,7 @@ class MediaControlTool(
                 put("type", "string")
                 putJsonArray("enum") {
                     add("play_pause"); add("next_track"); add("previous_track"); add("stop")
+                    add("play_music")
                     add("play_on_spotify"); add("play_on_youtube_music")
                     add("play_on_youtube"); add("play_on_app")
                 }
@@ -42,6 +47,10 @@ class MediaControlTool(
             putJsonObject("package_name") {
                 put("type", "string")
                 put("description", "App package name for play_on_app action")
+            }
+            putJsonObject("app") {
+                put("type", "string")
+                put("description", "Preferred music app for play_music (e.g. spotify, youtube_music, deezer, tidal); omit for any")
             }
         }
         putJsonArray("required") { add("action") }
@@ -57,26 +66,23 @@ class MediaControlTool(
             "previous_track" -> bridge.mediaPrevious()
             "stop" -> bridge.mediaStop()
 
+            "play_music" -> {
+                val query = input["query"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing query for play_music", isError = true)
+                val app = input["app"]?.jsonPrimitive?.contentOrNull ?: ""
+                bridge.playMusic(query, app)
+            }
+
             "play_on_spotify" -> {
                 val query = input["query"]?.jsonPrimitive?.contentOrNull
                     ?: return ToolResult("Missing query for Spotify search", isError = true)
-                val encoded = query.replace(" ", "%20")
-                bridge.openDeepLink(
-                    uri = "spotify:search:$encoded",
-                    packageName = "com.spotify.music",
-                    fallbackUrl = "https://open.spotify.com/search/$encoded"
-                )
+                bridge.playMusic(query, "spotify")
             }
 
             "play_on_youtube_music" -> {
                 val query = input["query"]?.jsonPrimitive?.contentOrNull
                     ?: return ToolResult("Missing query for YouTube Music search", isError = true)
-                val encoded = query.replace(" ", "+")
-                bridge.openDeepLink(
-                    uri = "https://music.youtube.com/search?q=$encoded",
-                    packageName = "com.google.android.apps.youtube.music",
-                    fallbackUrl = "https://music.youtube.com/search?q=$encoded"
-                )
+                bridge.playMusic(query, "youtube_music")
             }
 
             "play_on_youtube" -> {

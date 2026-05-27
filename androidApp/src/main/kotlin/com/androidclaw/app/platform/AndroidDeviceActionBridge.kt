@@ -2909,6 +2909,45 @@ class AndroidDeviceActionBridge(
         }
     }
 
+    override suspend fun playMusic(query: String, app: String): Result<String> {
+        logAction("playMusic", "query=$query, app=$app")
+        return runCatching {
+            val pkg = when (app.lowercase().trim()) {
+                "", "default", "any" -> null
+                "spotify" -> "com.spotify.music"
+                "youtube_music", "ytmusic", "youtube music", "yt music" -> "com.google.android.apps.youtube.music"
+                "youtube" -> "com.google.android.youtube"
+                "deezer" -> "deezer.android.app"
+                "tidal" -> "com.aspiro.tidal"
+                "amazon_music", "amazon music" -> "com.amazon.mp3"
+                "soundcloud" -> "com.soundcloud.android"
+                else -> app // allow a raw package name
+            }
+            // Standard "play from search" intent: capable media apps start playback directly.
+            fun playIntent(targetPkg: String?) = Intent(android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+                putExtra(android.app.SearchManager.QUERY, query)
+                putExtra(android.provider.MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                if (targetPkg != null) setPackage(targetPkg)
+            }
+            try {
+                context.startActivity(playIntent(pkg))
+                "Playing \"$query\"" + (if (pkg != null) " on $app" else "")
+            } catch (_: Exception) {
+                // Targeted app couldn't handle it; let any installed media app play.
+                if (pkg != null) {
+                    context.startActivity(playIntent(null))
+                    "Playing \"$query\""
+                } else {
+                    throw IllegalStateException("No music app available to play \"$query\"")
+                }
+            }
+        }.also { r ->
+            r.onSuccess { logResult("playMusic", it) }
+            r.onFailure { logError("playMusic", it) }
+        }
+    }
+
     // ==========================================
     // Email Notifications
     // ==========================================
