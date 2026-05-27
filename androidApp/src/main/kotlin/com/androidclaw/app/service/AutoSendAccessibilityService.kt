@@ -172,6 +172,145 @@ class AutoSendAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Closes Chrome tabs in the tab switcher. filter="duplicates" keeps one tab per
+     * title and closes the rest; filter="all" closes tabs down to the last one.
+     */
+    suspend fun closeChromeTabs(filter: String): String {
+        if (readChromeTabs().isEmpty()) {
+            if (!openTabSwitcher()) {
+                return "Couldn't open Chrome's tab switcher. Make sure Chrome is open in the foreground."
+            }
+            delay(1200)
+        }
+        val initial = readChromeTabs()
+        if (initial.isEmpty()) return "No Chrome tabs were found."
+
+        val dedupe = !filter.equals("all", ignoreCase = true)
+        var closed = 0
+        var guard = 0
+        while (guard++ < 200) {
+            val buttons = readChromeTabCloseButtons()
+            if (buttons.isEmpty()) break
+            val target: AccessibilityNodeInfo? = if (dedupe) {
+                val seen = mutableSetOf<String>()
+                buttons.firstOrNull { !seen.add(it.first.lowercase()) }?.second
+            } else {
+                if (buttons.size <= 1) null else buttons.first().second
+            }
+            if (target == null) break
+
+            val clicked = target.performAction(AccessibilityNodeInfo.ACTION_CLICK) ||
+                (target.parent?.performAction(AccessibilityNodeInfo.ACTION_CLICK) ?: false)
+            if (!clicked) break
+            closed++
+            delay(500)
+        }
+        return when {
+            closed == 0 && dedupe -> "No duplicate Chrome tabs found (${initial.size} tabs open)."
+            dedupe -> "Closed $closed duplicate Chrome tab(s); kept one of each."
+            else -> "Closed $closed Chrome tab(s) (kept the last one open)."
+        }
+    }
+
+    /** Reads the titles of the open Chrome tabs so the model can cluster/group them by topic. */
+    suspend fun getChromeTabs(): String {
+        if (readChromeTabs().isEmpty()) {
+            if (!openTabSwitcher()) {
+                return "Couldn't open Chrome's tab switcher. Make sure Chrome is open in the foreground."
+            }
+            delay(1200)
+        }
+        val tabs = readChromeTabs()
+        if (tabs.isEmpty()) return "No Chrome tabs were found."
+        return "Open Chrome tabs (${tabs.size}):\n" +
+            tabs.mapIndexed { i, t -> "${i + 1}. ${t.title}" }.joinToString("\n")
+    }
+
+    private fun readChromeTabCloseButtons(): List<Pair<String, AccessibilityNodeInfo>> {
+        val root = rootInActiveWindow ?: return emptyList()
+        val out = mutableListOf<Triple<String, AccessibilityNodeInfo, Rect>>()
+        collectCloseButtons(root, out)
+        return out.sortedWith(compareBy({ it.third.top / 100 }, { it.third.left }))
+            .map { it.first to it.second }
+    }
+
+    private fun collectCloseButtons(node: AccessibilityNodeInfo, out: MutableList<Triple<String, AccessibilityNodeInfo, Rect>>) {
+        val desc = node.contentDescription?.toString()
+        if (desc != null) {
+            val match = closeTabRegex.find(desc.trim())
+            if (match != null) {
+                val title = match.groupValues[1].trim()
+                val bounds = Rect().also { node.getBoundsInScreen(it) }
+                if (title.isNotEmpty()) out.add(Triple(title, node, bounds))
+            }
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectCloseButtons(child, out)
+        }
+    }
+
+    /**
+     * Best-effort: taps the ride "Confirm"/"Request" button on the currently-open ride app
+     * screen. This places a real, paid ride request, so callers must confirm with the user first.
+     */
+    suspend fun confirmRideRequest(): String {
+        delay(1800) // let the ride-options screen settle
+        val root = rootInActiveWindow ?: return "Couldn't read the screen. Make sure the ride app is open on the confirmation screen."
+        val pattern = Regex("(?i)\\b(confirm|request)\\b")
+        val button = findClickableByText(root, pattern)
+            ?: return "Couldn't find a ride Confirm/Request button on screen. Please tap it manually to finish."
+        return if (button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            "Tapped the ride Confirm button."
+        } else {
+            "Found the Confirm button but couldn't tap it. Please tap it manually."
+        }
+    }
+
+    /**
+     * Best-effort: finds and taps an on-screen button/control whose visible text or description
+     * contains [label]. Used to complete actions a deep link can only pre-fill (e.g. Send, Post,
+     * Confirm, Pay). Callers must confirm with the user first for anything that posts publicly,
+     * spends money, or is destructive.
+     */
+    suspend fun tapButton(label: String): String {
+        delay(900) // let the target screen settle
+        val root = rootInActiveWindow ?: return "Couldn't read the screen. Make sure the target app is in the foreground."
+        val pattern = Regex("(?i)" + Regex.escape(label.trim()))
+        val node = findClickableByText(root, pattern)
+            ?: return "Couldn't find a tappable \"$label\" on the current screen. Please tap it manually."
+        return if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            "Tapped \"$label\"."
+        } else {
+            "Found \"$label\" but couldn't tap it. Please tap it manually."
+        }
+    }
+
+    private fun findClickableByText(root: AccessibilityNodeInfo, pattern: Regex): AccessibilityNodeInfo? {
+        val matches = mutableListOf<AccessibilityNodeInfo>()
+        collectTextMatches(root, pattern, matches)
+        for (match in matches) {
+            var cur: AccessibilityNodeInfo? = match
+            var depth = 0
+            while (cur != null && depth < 5) {
+                if (cur.isClickable) return cur
+                cur = cur.parent
+                depth++
+            }
+        }
+        return null
+    }
+
+    private fun collectTextMatches(node: AccessibilityNodeInfo, pattern: Regex, out: MutableList<AccessibilityNodeInfo>) {
+        val text = ((node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")).trim()
+        if (text.isNotBlank() && pattern.containsMatchIn(text)) out.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTextMatches(child, pattern, out)
+        }
+    }
+
     private fun openTabSwitcher(): Boolean {
         val root = rootInActiveWindow ?: return false
         val candidates = mutableListOf<AccessibilityNodeInfo>()

@@ -144,6 +144,17 @@ interface DeviceActionBridge {
     // Ride-hailing
     suspend fun orderRide(destination: String, service: String = "uber"): Result<String>
 
+    // Music: actually start playback for a search query (not just open search)
+    suspend fun playMusic(query: String, app: String = ""): Result<String>
+
+    // Taps Confirm/Request on the currently-open ride app screen. Places a real paid ride;
+    // callers must confirm with the user first. Requires the accessibility service.
+    suspend fun confirmRideRequest(): Result<String>
+
+    // Taps an on-screen button matching a label to finish an action a deep link only pre-filled
+    // (Send/Post/Confirm/Pay). Callers must confirm with the user for paid/public/destructive taps.
+    suspend fun tapScreenButton(label: String): Result<String>
+
     // Email reading (via notification capture)
     suspend fun getEmailNotifications(count: Int = 10): Result<String>
 
@@ -323,4 +334,24 @@ interface DeviceActionBridge {
     suspend fun getRecentlyInstalledApps(days: Int = 30): Result<String>
     suspend fun getRunningApps(): Result<String>
     suspend fun killBackgroundApp(packageName: String): Result<String>
+
+    // --- Task automation: cleanup & tidy ---
+    suspend fun findDuplicateFiles(directory: String = "Downloads"): Result<String>
+    suspend fun findLargeFiles(directory: String = "Downloads", minSizeMb: Int = 50): Result<String>
+    suspend fun findOldFiles(directory: String = "Downloads", olderThanDays: Int = 90): Result<String>
+    suspend fun findScreenshots(): Result<String>
+    suspend fun cleanupScreenshots(olderThanDays: Int = 30): Result<String>
+    suspend fun suggestUnusedApps(days: Int = 30): Result<String>
+    suspend fun applyDeviceMode(mode: String): Result<String> // focus, sleep, battery_saver, outdoor, normal
+    suspend fun closeChromeTabs(filter: String = "duplicates"): Result<String> // duplicates, all
+    suspend fun getChromeTabs(): Result<String> // read open tab titles (e.g. to group/cluster by topic)
+
+    // --- Task automation: photo intelligence, notifications, messaging, routines ---
+    suspend fun findBlurryPhotos(limit: Int = 200): Result<String>
+    suspend fun findSimilarPhotos(limit: Int = 200): Result<String>
+    suspend fun cleanupPhotos(criteria: String = "blurry"): Result<String> // blurry
+    suspend fun clearNotificationsFromApp(packageName: String): Result<String>
+    suspend fun clearNotificationsByKeyword(keyword: String): Result<String>
+    suspend fun deleteOldSms(olderThanDays: Int = 365): Result<String>
+    suspend fun runCleanupRoutine(routine: String): Result<String> // storage, full
 }

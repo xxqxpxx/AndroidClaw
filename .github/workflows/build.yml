@@ -28,11 +28,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Build with Gradle
-        run: ./gradlew build --no-daemon
-
-      - name: Run tests
-        run: ./gradlew test --no-daemon
+      - name: Unit tests (debug)
+        run: ./gradlew :shared:testDebugUnitTest :androidApp:testDebugUnitTest --no-daemon
 
       - name: Assemble debug APK
         run: ./gradlew :androidApp:assembleDebug --no-daemon

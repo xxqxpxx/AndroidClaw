@@ -44,6 +44,7 @@ class ToolRegistry(
             tools.add(ShortcutTool(bridge))
             tools.add(AppManagementTool(bridge))
             tools.add(AppIntegrationTool(bridge))
+            tools.add(AutomationTool(bridge))
         }
 
         // Utility tools

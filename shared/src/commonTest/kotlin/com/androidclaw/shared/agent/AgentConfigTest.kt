@@ -20,9 +20,9 @@ class AgentConfigTest {
     }
 
     @Test
-    fun defaults_maxToolIterations5() {
+    fun defaults_maxToolIterations50() {
         val config = AgentConfig()
-        assertEquals(5, config.maxToolIterations)
+        assertEquals(50, config.maxToolIterations)
     }
 
     @Test

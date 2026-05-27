@@ -47,7 +47,7 @@ class WebContentTool(
                 return ToolResult("HTTP error: ${response.status.value} for $url", isError = true)
             }
 
-            val contentType = response.contentType()?.contentType ?: ""
+            val contentType = response.contentType()?.toString() ?: ""
             val body = response.bodyAsText()
 
             when {

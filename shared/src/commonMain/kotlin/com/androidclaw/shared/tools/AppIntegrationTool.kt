@@ -294,6 +294,7 @@ class AppIntegrationTool(
         "dropbox" to AppInfo("com.dropbox.android", "https://www.dropbox.com"),
         "onedrive" to AppInfo("com.microsoft.skydrive"),
         "chrome" to AppInfo("com.android.chrome"),
+        "google" to AppInfo("com.google.android.googlequicksearchbox", "https://www.google.com"),
         "firefox" to AppInfo("org.mozilla.firefox"),
         "opera" to AppInfo("com.opera.browser"),
         "brave" to AppInfo("com.brave.browser"),
@@ -1430,6 +1431,38 @@ class AppIntegrationTool(
             )
         }
 
+        // Messaging apps with auto-send support: actually send the message (tap Send via the
+        // accessibility service) instead of only opening the chat. Requires a phone number;
+        // username-only chats fall through to the deep-link path below.
+        val autoSendPackages = mapOf(
+            "whatsapp" to "com.whatsapp",
+            "telegram" to "org.telegram.messenger",
+            "signal" to "org.thoughtcrime.securesms",
+        )
+        if (action == "send_message" && appName in autoSendPackages) {
+            val phone = param("phone")
+            val msg = param("message") ?: param("text")
+            if (!phone.isNullOrBlank() && !msg.isNullOrBlank()) {
+                return bridge.sendIntentMessage(autoSendPackages.getValue(appName), phone, msg).fold(
+                    onSuccess = { ToolResult(it) },
+                    onFailure = { ToolResult("Failed: ${it.message}", isError = true) }
+                )
+            }
+        }
+
+        // Music apps: actually start playback for play/play_music via the system play-from-search
+        // intent (capable apps play the best match) instead of only opening a search screen.
+        val musicPlayApps = setOf("spotify", "youtube_music", "deezer", "tidal", "soundcloud", "amazon_music", "apple_music")
+        if ((action == "play" || action == "play_music") && appName in musicPlayApps) {
+            val query = param("query") ?: param("text")
+            if (!query.isNullOrBlank()) {
+                return bridge.playMusic(query, appName).fold(
+                    onSuccess = { ToolResult(it) },
+                    onFailure = { ToolResult("Failed: ${it.message}", isError = true) }
+                )
+            }
+        }
+
         // Build the deep link URI based on app + action
         val deepLink = buildDeepLink(appName, action, ::param, ::encode)
             ?: return ToolResult(
@@ -2412,6 +2445,14 @@ class AppIntegrationTool(
                     val q = param("query") ?: return null
                     "googlechrome://navigate?url=${encode("https://www.google.com/search?q=${encode(q)}")}"
                 }
+                else -> null
+            }
+            "google" -> when (action) {
+                "search", "open" -> {
+                    val q = param("query") ?: return null
+                    "https://www.google.com/search?q=${encode(q)}"
+                }
+                "open_url", "browse" -> param("url")
                 else -> null
             }
             "firefox" -> when (action) {

@@ -120,8 +120,10 @@ internal class MiniInterpreter {
     private fun evaluateExpression(expr: String): Any? {
         val trimmed = expr.trim()
 
-        // String literal
-        if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+        // String literal (a single quoted literal, not a concatenation like "a" + "b")
+        if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"") &&
+            trimmed.indexOf('"', 1) == trimmed.length - 1
+        ) {
             return processStringInterpolation(trimmed.drop(1).dropLast(1))
         }
 
@@ -139,15 +141,16 @@ internal class MiniInterpreter {
             return variables[trimmed]
         }
 
-        // List literal: listOf(...)
-        if (trimmed.startsWith("listOf(") && trimmed.endsWith(")")) {
+        // List literal: listOf(...) — only when the call spans the whole expression,
+        // not e.g. listOf(...).joinToString(...)
+        if (trimmed.startsWith("listOf(") && findMatchingParen(trimmed, 6) == trimmed.length - 1) {
             val inner = trimmed.removePrefix("listOf(").removeSuffix(")")
             return if (inner.isBlank()) emptyList<Any?>()
             else splitArgs(inner).map { evaluateExpression(it) }
         }
 
         // Map literal: mapOf(...)
-        if (trimmed.startsWith("mapOf(") && trimmed.endsWith(")")) {
+        if (trimmed.startsWith("mapOf(") && findMatchingParen(trimmed, 5) == trimmed.length - 1) {
             val inner = trimmed.removePrefix("mapOf(").removeSuffix(")")
             if (inner.isBlank()) return emptyMap<Any?, Any?>()
             val pairs = splitArgs(inner).map { pair ->

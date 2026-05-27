@@ -21,7 +21,7 @@ class SystemActionsTool(
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                put("description", "The system action to perform")
+                put("description", "The system action to perform. NOTE: 'confirm_ride' taps Confirm in the open ride app and places a REAL, PAID ride request — only use it right after 'order_ride' and only after explicitly telling the user it will charge them and getting their go-ahead. 'tap_button' taps an on-screen control matching button_label to finish an action a deep link only pre-filled (e.g. Send, Post, Confirm, Pay); for anything that posts publicly, spends money, or deletes data you MUST warn the user and get explicit approval before using it.")
                 putJsonArray("enum") {
                     // Navigation
                     add("go_home"); add("go_back"); add("show_recents")
@@ -76,7 +76,9 @@ class SystemActionsTool(
                     add("clear_app_data"); add("default_apps"); add("digital_wellbeing")
                     add("ringtone_settings"); add("create_reminder")
                     // Ride-hailing
-                    add("order_ride")
+                    add("order_ride"); add("confirm_ride")
+                    // Generic on-screen completion
+                    add("tap_button")
                     // Email
                     add("read_emails")
                     // Accessibility extended
@@ -175,6 +177,10 @@ class SystemActionsTool(
                 put("type", "string")
                 putJsonArray("enum") { add("uber"); add("lyft"); add("careem"); add("bolt") }
                 put("description", "Ride-hailing service for order_ride (default: uber)")
+            }
+            putJsonObject("button_label") {
+                put("type", "string")
+                put("description", "Visible text of the on-screen button to tap for tap_button (e.g. 'Send', 'Post', 'Confirm', 'Pay')")
             }
             putJsonObject("email_count") {
                 put("type", "integer")
@@ -419,6 +425,13 @@ class SystemActionsTool(
                     ?: return ToolResult("Missing destination for ride", isError = true)
                 val service = input["ride_service"]?.jsonPrimitive?.contentOrNull ?: "uber"
                 bridge.orderRide(dest, service)
+            }
+            "confirm_ride" -> bridge.confirmRideRequest()
+            "tap_button" -> {
+                val label = input["button_label"]?.jsonPrimitive?.contentOrNull
+                    ?: input["text"]?.jsonPrimitive?.contentOrNull
+                    ?: return ToolResult("Missing button_label for tap_button", isError = true)
+                bridge.tapScreenButton(label)
             }
 
             // Email reading

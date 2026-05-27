@@ -197,6 +197,9 @@ class IosDeviceActionBridge : DeviceActionBridge {
 
     // Ride-hailing
     override suspend fun orderRide(destination: String, service: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun playMusic(query: String, app: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun confirmRideRequest(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun tapScreenButton(label: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 
     // Email reading
     override suspend fun getEmailNotifications(count: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
@@ -362,4 +365,22 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun getRecentlyInstalledApps(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun getRunningApps(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun killBackgroundApp(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // --- Task automation: cleanup & tidy ---
+    override suspend fun findDuplicateFiles(directory: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findLargeFiles(directory: String, minSizeMb: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findOldFiles(directory: String, olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findScreenshots(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun cleanupScreenshots(olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun suggestUnusedApps(days: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun applyDeviceMode(mode: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun closeChromeTabs(filter: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getChromeTabs(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findBlurryPhotos(limit: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun findSimilarPhotos(limit: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun cleanupPhotos(criteria: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun clearNotificationsFromApp(packageName: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun clearNotificationsByKeyword(keyword: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun deleteOldSms(olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun runCleanupRoutine(routine: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }
