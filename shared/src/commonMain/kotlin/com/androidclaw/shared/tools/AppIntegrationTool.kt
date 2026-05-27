@@ -1430,6 +1430,25 @@ class AppIntegrationTool(
             )
         }
 
+        // Messaging apps with auto-send support: actually send the message (tap Send via the
+        // accessibility service) instead of only opening the chat. Requires a phone number;
+        // username-only chats fall through to the deep-link path below.
+        val autoSendPackages = mapOf(
+            "whatsapp" to "com.whatsapp",
+            "telegram" to "org.telegram.messenger",
+            "signal" to "org.thoughtcrime.securesms",
+        )
+        if (action == "send_message" && appName in autoSendPackages) {
+            val phone = param("phone")
+            val msg = param("message") ?: param("text")
+            if (!phone.isNullOrBlank() && !msg.isNullOrBlank()) {
+                return bridge.sendIntentMessage(autoSendPackages.getValue(appName), phone, msg).fold(
+                    onSuccess = { ToolResult(it) },
+                    onFailure = { ToolResult("Failed: ${it.message}", isError = true) }
+                )
+            }
+        }
+
         // Build the deep link URI based on app + action
         val deepLink = buildDeepLink(appName, action, ::param, ::encode)
             ?: return ToolResult(
