@@ -213,6 +213,20 @@ class AutoSendAccessibilityService : AccessibilityService() {
         }
     }
 
+    /** Reads the titles of the open Chrome tabs so the model can cluster/group them by topic. */
+    suspend fun getChromeTabs(): String {
+        if (readChromeTabs().isEmpty()) {
+            if (!openTabSwitcher()) {
+                return "Couldn't open Chrome's tab switcher. Make sure Chrome is open in the foreground."
+            }
+            delay(1200)
+        }
+        val tabs = readChromeTabs()
+        if (tabs.isEmpty()) return "No Chrome tabs were found."
+        return "Open Chrome tabs (${tabs.size}):\n" +
+            tabs.mapIndexed { i, t -> "${i + 1}. ${t.title}" }.joinToString("\n")
+    }
+
     private fun readChromeTabCloseButtons(): List<Pair<String, AccessibilityNodeInfo>> {
         val root = rootInActiveWindow ?: return emptyList()
         val out = mutableListOf<Triple<String, AccessibilityNodeInfo, Rect>>()

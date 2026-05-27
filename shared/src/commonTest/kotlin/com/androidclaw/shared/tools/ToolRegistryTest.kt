@@ -332,6 +332,7 @@ private class TestDeviceActionBridge : DeviceActionBridge {
     override suspend fun suggestUnusedApps(days: Int) = Result.success("ok")
     override suspend fun applyDeviceMode(mode: String) = Result.success("ok")
     override suspend fun closeChromeTabs(filter: String) = Result.success("ok")
+    override suspend fun getChromeTabs() = Result.success("ok")
     override suspend fun findBlurryPhotos(limit: Int) = Result.success("ok")
     override suspend fun findSimilarPhotos(limit: Int) = Result.success("ok")
     override suspend fun cleanupPhotos(criteria: String) = Result.success("ok")

@@ -5907,6 +5907,23 @@ class AndroidDeviceActionBridge(
         return hash
     }
 
+    override suspend fun getChromeTabs(): Result<String> {
+        logAction("getChromeTabs")
+        return runCatching {
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to read Chrome tabs."
+            val launch = context.packageManager.getLaunchIntentForPackage("com.android.chrome")
+                ?: return@runCatching "Chrome is not installed on this device."
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launch)
+            kotlinx.coroutines.delay(1500)
+            service.getChromeTabs()
+        }.also { r ->
+            r.onSuccess { logResult("getChromeTabs", it.take(200)) }
+            r.onFailure { logError("getChromeTabs", it) }
+        }
+    }
+
     private fun screenshotDirectories(): List<java.io.File> {
         val pics = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES)
         val dcim = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DCIM)

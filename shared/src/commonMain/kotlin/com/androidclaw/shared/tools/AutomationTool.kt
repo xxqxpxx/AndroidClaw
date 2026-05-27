@@ -24,6 +24,7 @@ class AutomationTool(
         | - suggest_unused_apps: list user apps not opened in the last days (needs Usage Access)
         | - apply_mode: apply a bundle of settings at once (focus, sleep, battery_saver, outdoor, normal)
         | - close_chrome_tabs: close duplicate tabs (filter=duplicates) or all-but-one (filter=all); needs accessibility
+        | - list_chrome_tabs: read open Chrome tab titles so you can cluster/group them by topic, then act (sort/close)
         | - find_blurry_photos: scan DCIM/Pictures and list likely-blurry photos
         | - find_similar_photos: group visually near-duplicate photos (perceptual hash)
         | - cleanup_photos: move blurry photos (criteria=blurry) into a reversible trash folder
@@ -42,7 +43,7 @@ class AutomationTool(
                 putJsonArray("enum") {
                     add("find_duplicate_files"); add("find_large_files"); add("find_old_files")
                     add("find_screenshots"); add("cleanup_screenshots")
-                    add("suggest_unused_apps"); add("apply_mode"); add("close_chrome_tabs")
+                    add("suggest_unused_apps"); add("apply_mode"); add("close_chrome_tabs"); add("list_chrome_tabs")
                     add("find_blurry_photos"); add("find_similar_photos"); add("cleanup_photos")
                     add("clear_notifications_from_app"); add("clear_notifications_by_keyword")
                     add("delete_old_sms"); add("run_routine")
@@ -134,6 +135,7 @@ class AutomationTool(
                 val filter = input["filter"]?.jsonPrimitive?.contentOrNull ?: "duplicates"
                 bridge.closeChromeTabs(filter)
             }
+            "list_chrome_tabs" -> bridge.getChromeTabs()
             "find_blurry_photos" -> {
                 val limit = input["limit"]?.jsonPrimitive?.intOrNull ?: 200
                 bridge.findBlurryPhotos(limit)

@@ -340,6 +340,7 @@ interface DeviceActionBridge {
     suspend fun suggestUnusedApps(days: Int = 30): Result<String>
     suspend fun applyDeviceMode(mode: String): Result<String> // focus, sleep, battery_saver, outdoor, normal
     suspend fun closeChromeTabs(filter: String = "duplicates"): Result<String> // duplicates, all
+    suspend fun getChromeTabs(): Result<String> // read open tab titles (e.g. to group/cluster by topic)
 
     // --- Task automation: photo intelligence, notifications, messaging, routines ---
     suspend fun findBlurryPhotos(limit: Int = 200): Result<String>
