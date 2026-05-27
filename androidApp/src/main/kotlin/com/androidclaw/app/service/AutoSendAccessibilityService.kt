@@ -237,6 +237,47 @@ class AutoSendAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Best-effort: taps the ride "Confirm"/"Request" button on the currently-open ride app
+     * screen. This places a real, paid ride request, so callers must confirm with the user first.
+     */
+    suspend fun confirmRideRequest(): String {
+        delay(1800) // let the ride-options screen settle
+        val root = rootInActiveWindow ?: return "Couldn't read the screen. Make sure the ride app is open on the confirmation screen."
+        val pattern = Regex("(?i)\\b(confirm|request)\\b")
+        val button = findClickableByText(root, pattern)
+            ?: return "Couldn't find a ride Confirm/Request button on screen. Please tap it manually to finish."
+        return if (button.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            "Tapped the ride Confirm button."
+        } else {
+            "Found the Confirm button but couldn't tap it. Please tap it manually."
+        }
+    }
+
+    private fun findClickableByText(root: AccessibilityNodeInfo, pattern: Regex): AccessibilityNodeInfo? {
+        val matches = mutableListOf<AccessibilityNodeInfo>()
+        collectTextMatches(root, pattern, matches)
+        for (match in matches) {
+            var cur: AccessibilityNodeInfo? = match
+            var depth = 0
+            while (cur != null && depth < 5) {
+                if (cur.isClickable) return cur
+                cur = cur.parent
+                depth++
+            }
+        }
+        return null
+    }
+
+    private fun collectTextMatches(node: AccessibilityNodeInfo, pattern: Regex, out: MutableList<AccessibilityNodeInfo>) {
+        val text = ((node.text?.toString() ?: "") + " " + (node.contentDescription?.toString() ?: "")).trim()
+        if (text.isNotBlank() && pattern.containsMatchIn(text)) out.add(node)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectTextMatches(child, pattern, out)
+        }
+    }
+
     private fun openTabSwitcher(): Boolean {
         val root = rootInActiveWindow ?: return false
         val candidates = mutableListOf<AccessibilityNodeInfo>()

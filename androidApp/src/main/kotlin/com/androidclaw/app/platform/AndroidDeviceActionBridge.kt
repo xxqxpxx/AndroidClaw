@@ -2948,6 +2948,18 @@ class AndroidDeviceActionBridge(
         }
     }
 
+    override suspend fun confirmRideRequest(): Result<String> {
+        logAction("confirmRideRequest")
+        return runCatching {
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to auto-confirm rides."
+            service.confirmRideRequest()
+        }.also { r ->
+            r.onSuccess { logResult("confirmRideRequest", it) }
+            r.onFailure { logError("confirmRideRequest", it) }
+        }
+    }
+
     // ==========================================
     // Email Notifications
     // ==========================================

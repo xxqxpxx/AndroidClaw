@@ -147,6 +147,10 @@ interface DeviceActionBridge {
     // Music: actually start playback for a search query (not just open search)
     suspend fun playMusic(query: String, app: String = ""): Result<String>
 
+    // Taps Confirm/Request on the currently-open ride app screen. Places a real paid ride;
+    // callers must confirm with the user first. Requires the accessibility service.
+    suspend fun confirmRideRequest(): Result<String>
+
     // Email reading (via notification capture)
     suspend fun getEmailNotifications(count: Int = 10): Result<String>
 

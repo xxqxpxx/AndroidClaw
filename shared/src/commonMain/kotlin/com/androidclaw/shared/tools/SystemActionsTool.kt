@@ -21,7 +21,7 @@ class SystemActionsTool(
         putJsonObject("properties") {
             putJsonObject("action") {
                 put("type", "string")
-                put("description", "The system action to perform")
+                put("description", "The system action to perform. NOTE: 'confirm_ride' taps Confirm in the open ride app and places a REAL, PAID ride request — only use it right after 'order_ride' and only after explicitly telling the user it will charge them and getting their go-ahead.")
                 putJsonArray("enum") {
                     // Navigation
                     add("go_home"); add("go_back"); add("show_recents")
@@ -76,7 +76,7 @@ class SystemActionsTool(
                     add("clear_app_data"); add("default_apps"); add("digital_wellbeing")
                     add("ringtone_settings"); add("create_reminder")
                     // Ride-hailing
-                    add("order_ride")
+                    add("order_ride"); add("confirm_ride")
                     // Email
                     add("read_emails")
                     // Accessibility extended
@@ -420,6 +420,7 @@ class SystemActionsTool(
                 val service = input["ride_service"]?.jsonPrimitive?.contentOrNull ?: "uber"
                 bridge.orderRide(dest, service)
             }
+            "confirm_ride" -> bridge.confirmRideRequest()
 
             // Email reading
             "read_emails" -> {
