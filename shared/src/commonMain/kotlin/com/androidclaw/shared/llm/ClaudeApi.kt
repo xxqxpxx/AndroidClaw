@@ -22,6 +22,11 @@ data class ClaudeMessage(
 ) {
     companion object {
         fun user(text: String) = ClaudeMessage("user", listOf(ContentBlock.Text(text)))
+        fun userWithImage(text: String, imageBase64: String, mediaType: String = "image/png") =
+            ClaudeMessage("user", listOf(
+                ContentBlock.Image(ImageSource(type = "base64", mediaType = mediaType, data = imageBase64)),
+                ContentBlock.Text(text)
+            ))
         fun assistant(text: String) = ClaudeMessage("assistant", listOf(ContentBlock.Text(text)))
     }
 }
@@ -31,6 +36,12 @@ sealed class ContentBlock {
     @Serializable
     @SerialName("text")
     data class Text(val text: String) : ContentBlock()
+
+    @Serializable
+    @SerialName("image")
+    data class Image(
+        val source: ImageSource
+    ) : ContentBlock()
 
     @Serializable
     @SerialName("tool_use")
@@ -48,6 +59,13 @@ sealed class ContentBlock {
         @SerialName("is_error") val isError: Boolean = false
     ) : ContentBlock()
 }
+
+@Serializable
+data class ImageSource(
+    val type: String = "base64",
+    @SerialName("media_type") val mediaType: String = "image/png",
+    val data: String
+)
 
 @Serializable
 data class ClaudeToolDefinition(

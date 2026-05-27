@@ -2967,7 +2967,18 @@ class AndroidDeviceActionBridge(
         return runCatching {
             val service = AutoSendAccessibilityService.instance
                 ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to complete on-screen actions."
-            service.tapButton(label)
+
+            // Try accessibility tree first
+            val result = service.tapButton(label)
+
+            // If accessibility tree couldn't find it, fall back to vision
+            if (result.contains("Couldn't find") || result.contains("couldn't find")) {
+                Log.i(TAG, "tapScreenButton: a11y tree miss for '$label', trying vision fallback")
+                val visionResult = visionFindAndTap(label)
+                visionResult.getOrNull() ?: result // return original error if vision also fails
+            } else {
+                result
+            }
         }.also { r ->
             r.onSuccess { logResult("tapScreenButton", it) }
             r.onFailure { logError("tapScreenButton", it) }
@@ -6008,5 +6019,181 @@ class AndroidDeviceActionBridge(
             } catch (_: PackageManager.NameNotFoundException) {}
         }
         return this
+    }
+
+    // ==========================================
+    // Vision-based Screen Interaction (Task #1)
+    // ==========================================
+
+    private var visionService: com.androidclaw.app.vision.VisionService? = null
+    private var actionExecutor: com.androidclaw.app.vision.ActionExecutor? = null
+
+    private fun getVisionService(): com.androidclaw.app.vision.VisionService? {
+        if (visionService == null) {
+            val settings = try {
+                org.koin.java.KoinJavaComponent.getKoin().get<com.androidclaw.app.settings.SettingsManager>()
+            } catch (_: Exception) { null }
+            val apiKey = settings?.apiKey?.value ?: return null
+            if (apiKey.isBlank()) return null
+            val httpClient = try {
+                org.koin.java.KoinJavaComponent.getKoin().get<io.ktor.client.HttpClient>()
+            } catch (_: Exception) { return null }
+            visionService = com.androidclaw.app.vision.VisionService(httpClient, apiKey)
+        }
+        return visionService
+    }
+
+    private fun getActionExecutor(): com.androidclaw.app.vision.ActionExecutor? {
+        if (actionExecutor == null) {
+            val service = AutoSendAccessibilityService.instance ?: return null
+            actionExecutor = com.androidclaw.app.vision.ActionExecutor(service)
+        }
+        return actionExecutor
+    }
+
+    override suspend fun visionDescribeScreen(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionDescribeScreen")
+        runCatching {
+            val vision = getVisionService()
+                ?: return@runCatching "Vision service not available. Check API key in settings."
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled."
+            val bitmap = vision.captureScreen(service)
+                ?: return@runCatching "Failed to capture screenshot (requires Android 11+)."
+            val base64 = vision.encodeScreenshot(bitmap)
+            bitmap.recycle()
+            vision.describeScreen(base64)
+                ?: "Vision model returned no description."
+        }
+    }
+
+    override suspend fun visionFindAndTap(target: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionFindAndTap", "target=$target")
+        runCatching {
+            val vision = getVisionService()
+                ?: return@runCatching "Vision service not available. Check API key in settings."
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled."
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available."
+
+            // Capture screenshot
+            val bitmap = vision.captureScreen(service)
+                ?: return@runCatching "Failed to capture screenshot."
+            val base64 = vision.encodeScreenshot(bitmap)
+            val width = bitmap.width
+            val height = bitmap.height
+            bitmap.recycle()
+
+            // Ask vision model to find the element
+            val metrics = context.resources.displayMetrics
+            val tapTarget = vision.findElementCoordinates(
+                base64, target, metrics.widthPixels, metrics.heightPixels
+            ) ?: return@runCatching "Could not find '$target' on screen. Try describing the screen first to understand what's visible."
+
+            if (tapTarget.confidence < 0.3f) {
+                return@runCatching "Found possible match for '$target' at (${tapTarget.x}, ${tapTarget.y}) but confidence is very low (${tapTarget.confidence}). Screen may have changed."
+            }
+
+            // Execute the tap with safety checks
+            when (val result = executor.tap(tapTarget.x, tapTarget.y, tapTarget.label)) {
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Success -> result.description
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.StuckDetected -> result.message
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.RepeatDetected -> result.message
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.StepLimitReached ->
+                    "Step limit reached (${result.totalSteps}/${com.androidclaw.app.vision.ActionExecutor.MAX_STEPS_PER_GOAL}). Could not complete goal."
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Failed -> "Tap failed: ${result.reason}"
+            }
+        }
+    }
+
+    override suspend fun visionTapCoordinates(x: Int, y: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionTapCoordinates", "x=$x, y=$y")
+        runCatching {
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available. Accessibility service not enabled."
+            when (val result = executor.tap(x, y)) {
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Success -> result.description
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.StuckDetected -> result.message
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.RepeatDetected -> result.message
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.StepLimitReached ->
+                    "Step limit reached (${result.totalSteps}). Goal abandoned."
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Failed -> "Tap failed: ${result.reason}"
+            }
+        }
+    }
+
+    override suspend fun visionScroll(direction: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionScroll", "direction=$direction")
+        runCatching {
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available."
+            val result = when (direction.lowercase()) {
+                "up" -> executor.scrollUp()
+                "down" -> executor.scrollDown()
+                "left" -> {
+                    val m = context.resources.displayMetrics
+                    executor.swipe(m.widthPixels * 3 / 4, m.heightPixels / 2, m.widthPixels / 4, m.heightPixels / 2)
+                }
+                "right" -> {
+                    val m = context.resources.displayMetrics
+                    executor.swipe(m.widthPixels / 4, m.heightPixels / 2, m.widthPixels * 3 / 4, m.heightPixels / 2)
+                }
+                else -> return@runCatching "Unknown direction: $direction (use up/down/left/right)"
+            }
+            when (result) {
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Success -> result.description
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.StepLimitReached ->
+                    "Step limit reached (${result.totalSteps})."
+                else -> "Scroll $direction attempted."
+            }
+        }
+    }
+
+    override suspend fun visionGoBack(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionGoBack")
+        runCatching {
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available."
+            when (val result = executor.goBack()) {
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Success -> result.description
+                else -> "Back pressed."
+            }
+        }
+    }
+
+    override suspend fun visionRecovery(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionRecovery")
+        runCatching {
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available."
+            when (val result = executor.attemptRecovery()) {
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Success -> result.description
+                is com.androidclaw.app.vision.ActionExecutor.ActionResult.Failed -> result.reason
+                else -> "Recovery attempted."
+            }
+        }
+    }
+
+    override suspend fun visionStatus(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionStatus")
+        runCatching {
+            val executor = getActionExecutor()
+            if (executor == null) {
+                "Vision system not initialized (accessibility service not running)."
+            } else {
+                "Steps: ${executor.currentStep()}/${com.androidclaw.app.vision.ActionExecutor.MAX_STEPS_PER_GOAL} | Stuck: ${executor.isStuck()}"
+            }
+        }
+    }
+
+    override suspend fun visionResetGoal(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("visionResetGoal")
+        runCatching {
+            val executor = getActionExecutor()
+                ?: return@runCatching "Action executor not available."
+            executor.resetGoal()
+            "Goal reset. Step counter and stuck detection cleared."
+        }
     }
 }

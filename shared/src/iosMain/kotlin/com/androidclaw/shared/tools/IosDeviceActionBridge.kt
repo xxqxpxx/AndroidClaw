@@ -383,4 +383,14 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun clearNotificationsByKeyword(keyword: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun deleteOldSms(olderThanDays: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun runCleanupRoutine(routine: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Vision
+    override suspend fun visionDescribeScreen(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionFindAndTap(target: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionTapCoordinates(x: Int, y: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionScroll(direction: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionGoBack(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionRecovery(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionStatus(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun visionResetGoal(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }

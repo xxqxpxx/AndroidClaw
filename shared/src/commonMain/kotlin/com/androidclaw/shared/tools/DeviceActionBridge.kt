@@ -354,4 +354,14 @@ interface DeviceActionBridge {
     suspend fun clearNotificationsByKeyword(keyword: String): Result<String>
     suspend fun deleteOldSms(olderThanDays: Int = 365): Result<String>
     suspend fun runCleanupRoutine(routine: String): Result<String> // storage, full
+
+    // --- Vision-based screen interaction (Task #1) ---
+    suspend fun visionDescribeScreen(): Result<String>
+    suspend fun visionFindAndTap(target: String): Result<String>
+    suspend fun visionTapCoordinates(x: Int, y: Int): Result<String>
+    suspend fun visionScroll(direction: String): Result<String>
+    suspend fun visionGoBack(): Result<String>
+    suspend fun visionRecovery(): Result<String>
+    suspend fun visionStatus(): Result<String>
+    suspend fun visionResetGoal(): Result<String>
 }
