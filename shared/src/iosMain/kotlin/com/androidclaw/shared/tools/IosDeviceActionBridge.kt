@@ -400,4 +400,12 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun cancelScheduledTask(taskId: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun getTaskHistory(limit: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun runTaskNow(taskId: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Skills
+    override suspend fun skillsList(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun skillsRun(nameOrTrigger: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun skillsCreate(name: String, description: String, trigger: String, schedule: String, stepsJson: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun skillsDelete(id: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun skillsExport(id: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun skillsImport(jsonStr: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }

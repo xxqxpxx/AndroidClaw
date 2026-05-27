@@ -1,0 +1,15 @@
+{
+  "id": "morning-routine",
+  "name": "Morning Routine",
+  "description": "Start the day: brightness up, DND off, play morning music",
+  "trigger": "/morning",
+  "schedule": "daily 07:00",
+  "steps": [
+    {"action": "set_brightness", "params": {"level": "80"}, "description": "Set brightness to 80%"},
+    {"action": "set_dnd", "params": {"enabled": "false"}, "description": "Turn off Do Not Disturb"},
+    {"action": "set_volume", "params": {"stream": "music", "level": "40"}, "description": "Set music volume to 40%"},
+    {"action": "play_music", "params": {"query": "morning jazz playlist"}, "description": "Play morning music"}
+  ],
+  "enabled": true,
+  "priority": 0
+}

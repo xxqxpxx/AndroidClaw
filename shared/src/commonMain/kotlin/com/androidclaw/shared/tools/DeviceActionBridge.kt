@@ -371,4 +371,12 @@ interface DeviceActionBridge {
     suspend fun cancelScheduledTask(taskId: String): Result<String>
     suspend fun getTaskHistory(limit: Int = 10): Result<String>
     suspend fun runTaskNow(taskId: String): Result<String>
+
+    // --- Skills System (Task #3) ---
+    suspend fun skillsList(): Result<String>
+    suspend fun skillsRun(nameOrTrigger: String): Result<String>
+    suspend fun skillsCreate(name: String, description: String, trigger: String, schedule: String, stepsJson: String): Result<String>
+    suspend fun skillsDelete(id: String): Result<String>
+    suspend fun skillsExport(id: String): Result<String>
+    suspend fun skillsImport(jsonStr: String): Result<String>
 }

@@ -1,0 +1,14 @@
+{
+  "id": "bedtime",
+  "name": "Bedtime",
+  "description": "Wind down: DND on, brightness low, dark mode, bedtime mode",
+  "trigger": "/bedtime",
+  "schedule": "daily 23:00",
+  "steps": [
+    {"action": "set_dnd", "params": {"enabled": "true"}, "description": "Enable Do Not Disturb"},
+    {"action": "set_brightness", "params": {"level": "10"}, "description": "Dim brightness"},
+    {"action": "apply_mode", "params": {"mode": "sleep"}, "description": "Apply sleep mode"}
+  ],
+  "enabled": true,
+  "priority": 1
+}

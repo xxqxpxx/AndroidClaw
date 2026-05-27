@@ -6326,4 +6326,87 @@ class AndroidDeviceActionBridge(
             else -> "Unknown step action: ${step.action}"
         }
     }
+
+    // ==========================================
+    // Skills System (Task #3)
+    // ==========================================
+
+    private val skillManager by lazy { com.androidclaw.app.skills.SkillManager(context) }
+
+    override suspend fun skillsList(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsList")
+        runCatching { skillManager.listSkillsFormatted() }
+    }
+
+    override suspend fun skillsRun(nameOrTrigger: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsRun", "query=$nameOrTrigger")
+        runCatching {
+            val skill = skillManager.findByTrigger(nameOrTrigger)
+                ?: skillManager.findByName(nameOrTrigger)
+                ?: return@runCatching "Skill not found: '$nameOrTrigger'. Use skills list to see available skills."
+
+            val results = mutableListOf<String>()
+            var succeeded = 0
+
+            for (step in skill.steps) {
+                try {
+                    val taskStep = com.androidclaw.app.scheduler.TaskStep(
+                        action = step.action,
+                        params = step.params
+                    )
+                    val r = executeScheduledStep(taskStep)
+                    results.add("\u2713 ${step.description.ifEmpty { step.action }}: $r")
+                    succeeded++
+                } catch (e: Exception) {
+                    results.add("\u2717 ${step.description.ifEmpty { step.action }}: ${e.message}")
+                }
+            }
+
+            "Skill '${skill.name}' complete: $succeeded/${skill.steps.size} steps succeeded\n${results.joinToString("\n")}"
+        }
+    }
+
+    override suspend fun skillsCreate(
+        name: String, description: String, trigger: String, schedule: String, stepsJson: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsCreate", "name=$name")
+        runCatching {
+            val id = name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+            val steps = try {
+                kotlinx.serialization.json.Json.decodeFromString<List<com.androidclaw.app.skills.SkillStep>>(stepsJson)
+            } catch (_: Exception) {
+                return@runCatching "Invalid steps JSON. Expected: [{\"action\":\"...\",\"params\":{...}}]"
+            }
+            val skill = com.androidclaw.app.skills.Skill(
+                id = id, name = name, description = description,
+                trigger = trigger, schedule = schedule, steps = steps
+            )
+            skillManager.saveSkill(skill)
+            "Skill '${skill.name}' created (ID: $id, trigger: ${trigger.ifEmpty { "none" }}, ${steps.size} steps)"
+        }
+    }
+
+    override suspend fun skillsDelete(id: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsDelete", "id=$id")
+        runCatching {
+            if (skillManager.deleteSkill(id)) "Skill '$id' deleted."
+            else "Skill '$id' not found."
+        }
+    }
+
+    override suspend fun skillsExport(id: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsExport", "id=$id")
+        runCatching {
+            skillManager.exportSkill(id) ?: "Skill '$id' not found."
+        }
+    }
+
+    override suspend fun skillsImport(jsonStr: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("skillsImport")
+        runCatching {
+            val skill = skillManager.importSkill(jsonStr)
+                ?: return@runCatching "Failed to import skill. Check JSON format."
+            "Imported skill '${skill.name}' (ID: ${skill.id}, ${skill.steps.size} steps)"
+        }
+    }
 }

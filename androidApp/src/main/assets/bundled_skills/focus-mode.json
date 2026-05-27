@@ -1,0 +1,12 @@
+{
+  "id": "focus-mode",
+  "name": "Focus Mode",
+  "description": "Eliminate distractions: DND on, close social apps, set focus mode",
+  "trigger": "/focus",
+  "steps": [
+    {"action": "apply_mode", "params": {"mode": "focus"}, "description": "Apply focus device mode"},
+    {"action": "set_volume", "params": {"stream": "notification", "level": "0"}, "description": "Mute notifications"}
+  ],
+  "enabled": true,
+  "priority": 2
+}
