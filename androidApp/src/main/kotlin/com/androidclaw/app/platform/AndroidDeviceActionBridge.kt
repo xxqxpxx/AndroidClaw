@@ -2962,6 +2962,18 @@ class AndroidDeviceActionBridge(
         }
     }
 
+    override suspend fun tapScreenButton(label: String): Result<String> {
+        logAction("tapScreenButton", "label=$label")
+        return runCatching {
+            val service = AutoSendAccessibilityService.instance
+                ?: return@runCatching "Accessibility service not enabled. Enable AndroidClaw in Settings > Accessibility to complete on-screen actions."
+            service.tapButton(label)
+        }.also { r ->
+            r.onSuccess { logResult("tapScreenButton", it) }
+            r.onFailure { logError("tapScreenButton", it) }
+        }
+    }
+
     // ==========================================
     // Email Notifications
     // ==========================================

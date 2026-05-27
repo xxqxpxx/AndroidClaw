@@ -1450,6 +1450,19 @@ class AppIntegrationTool(
             }
         }
 
+        // Music apps: actually start playback for play/play_music via the system play-from-search
+        // intent (capable apps play the best match) instead of only opening a search screen.
+        val musicPlayApps = setOf("spotify", "youtube_music", "deezer", "tidal", "soundcloud", "amazon_music", "apple_music")
+        if ((action == "play" || action == "play_music") && appName in musicPlayApps) {
+            val query = param("query") ?: param("text")
+            if (!query.isNullOrBlank()) {
+                return bridge.playMusic(query, appName).fold(
+                    onSuccess = { ToolResult(it) },
+                    onFailure = { ToolResult("Failed: ${it.message}", isError = true) }
+                )
+            }
+        }
+
         // Build the deep link URI based on app + action
         val deepLink = buildDeepLink(appName, action, ::param, ::encode)
             ?: return ToolResult(

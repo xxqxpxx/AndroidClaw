@@ -151,6 +151,10 @@ interface DeviceActionBridge {
     // callers must confirm with the user first. Requires the accessibility service.
     suspend fun confirmRideRequest(): Result<String>
 
+    // Taps an on-screen button matching a label to finish an action a deep link only pre-filled
+    // (Send/Post/Confirm/Pay). Callers must confirm with the user for paid/public/destructive taps.
+    suspend fun tapScreenButton(label: String): Result<String>
+
     // Email reading (via notification capture)
     suspend fun getEmailNotifications(count: Int = 10): Result<String>
 

@@ -268,6 +268,25 @@ class AutoSendAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * Best-effort: finds and taps an on-screen button/control whose visible text or description
+     * contains [label]. Used to complete actions a deep link can only pre-fill (e.g. Send, Post,
+     * Confirm, Pay). Callers must confirm with the user first for anything that posts publicly,
+     * spends money, or is destructive.
+     */
+    suspend fun tapButton(label: String): String {
+        delay(900) // let the target screen settle
+        val root = rootInActiveWindow ?: return "Couldn't read the screen. Make sure the target app is in the foreground."
+        val pattern = Regex("(?i)" + Regex.escape(label.trim()))
+        val node = findClickableByText(root, pattern)
+            ?: return "Couldn't find a tappable \"$label\" on the current screen. Please tap it manually."
+        return if (node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            "Tapped \"$label\"."
+        } else {
+            "Found \"$label\" but couldn't tap it. Please tap it manually."
+        }
+    }
+
     private fun findClickableByText(root: AccessibilityNodeInfo, pattern: Regex): AccessibilityNodeInfo? {
         val matches = mutableListOf<AccessibilityNodeInfo>()
         collectTextMatches(root, pattern, matches)
