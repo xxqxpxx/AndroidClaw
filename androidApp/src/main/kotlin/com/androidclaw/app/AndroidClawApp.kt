@@ -34,6 +34,8 @@ class AndroidClawApp : Application() {
             single { OnDeviceLlmEngine(get()) }
             single { ModelDownloadManager(get()) }
             single { SoundManager(get()) }
+            single { com.androidclaw.app.scheduler.TaskRepository(get()) }
+            single { com.androidclaw.app.scheduler.TaskScheduler(get()) }
         }
 
         startKoin {

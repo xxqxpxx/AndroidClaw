@@ -393,4 +393,11 @@ class IosDeviceActionBridge : DeviceActionBridge {
     override suspend fun visionRecovery(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun visionStatus(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
     override suspend fun visionResetGoal(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+
+    // Scheduler
+    override suspend fun scheduleTask(name: String, description: String, triggerTimeMs: Long, repeatIntervalMs: Long, steps: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun listScheduledTasks(): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun cancelScheduledTask(taskId: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun getTaskHistory(limit: Int): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
+    override suspend fun runTaskNow(taskId: String): Result<String> = Result.failure(UnsupportedOperationException("Not yet implemented on iOS"))
 }

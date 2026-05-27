@@ -46,6 +46,7 @@ class ToolRegistry(
             tools.add(AppIntegrationTool(bridge))
             tools.add(AutomationTool(bridge))
             tools.add(ScreenAnalysisTool(bridge))
+            tools.add(SchedulerTool(bridge))
         }
 
         // Utility tools

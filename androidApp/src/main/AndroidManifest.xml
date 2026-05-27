@@ -166,6 +166,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Task scheduler alarm trigger -->
+        <receiver
+            android:name=".scheduler.TaskTriggerReceiver"
+            android:exported="false" />
+
         <!-- Notification Listener Service for reading device notifications -->
         <service
             android:name=".service.ClawNotificationListenerService"

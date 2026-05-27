@@ -364,4 +364,11 @@ interface DeviceActionBridge {
     suspend fun visionRecovery(): Result<String>
     suspend fun visionStatus(): Result<String>
     suspend fun visionResetGoal(): Result<String>
+
+    // --- Task Scheduler (Task #2) ---
+    suspend fun scheduleTask(name: String, description: String, triggerTimeMs: Long, repeatIntervalMs: Long, steps: String): Result<String>
+    suspend fun listScheduledTasks(): Result<String>
+    suspend fun cancelScheduledTask(taskId: String): Result<String>
+    suspend fun getTaskHistory(limit: Int = 10): Result<String>
+    suspend fun runTaskNow(taskId: String): Result<String>
 }

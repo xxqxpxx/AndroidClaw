@@ -6196,4 +6196,134 @@ class AndroidDeviceActionBridge(
             "Goal reset. Step counter and stuck detection cleared."
         }
     }
+
+    // ==========================================
+    // Task Scheduler (Task #2)
+    // ==========================================
+
+    private fun getTaskScheduler(): com.androidclaw.app.scheduler.TaskScheduler {
+        return com.androidclaw.app.scheduler.TaskScheduler(context)
+    }
+
+    private fun getTaskRepository(): com.androidclaw.app.scheduler.TaskRepository? {
+        return try {
+            org.koin.java.KoinJavaComponent.getKoin().getOrNull<com.androidclaw.app.scheduler.TaskRepository>()
+        } catch (_: Exception) { null }
+    }
+
+    override suspend fun scheduleTask(
+        name: String, description: String, triggerTimeMs: Long, repeatIntervalMs: Long, steps: String
+    ): Result<String> = withContext(Dispatchers.IO) {
+        logAction("scheduleTask", "name=$name, trigger=$triggerTimeMs")
+        runCatching {
+            val repo = getTaskRepository()
+                ?: return@runCatching "Task scheduler not initialized."
+            val id = java.util.UUID.randomUUID().toString().take(8)
+            val triggerType = if (repeatIntervalMs > 0) "repeating" else "once"
+
+            repo.insertTask(id, name, description, triggerType, triggerTimeMs,
+                if (repeatIntervalMs > 0) repeatIntervalMs else null, steps)
+
+            val result = if (repeatIntervalMs > 0) {
+                getTaskScheduler().scheduleRepeating(id, repeatIntervalMs, name)
+            } else {
+                getTaskScheduler().scheduleTask(id, triggerTimeMs, name)
+            }
+
+            "Task '$name' scheduled (ID: $id). Method: ${result.method.name}. ${result.message}"
+        }
+    }
+
+    override suspend fun listScheduledTasks(): Result<String> = withContext(Dispatchers.IO) {
+        logAction("listScheduledTasks")
+        runCatching {
+            val repo = getTaskRepository()
+                ?: return@runCatching "Task scheduler not initialized."
+            val tasks = repo.getEnabledTasks()
+            if (tasks.isEmpty()) return@runCatching "No scheduled tasks."
+            buildString {
+                appendLine("Scheduled tasks (${tasks.size}):")
+                tasks.forEach { t ->
+                    val nextStr = t.nextRunAt?.let { java.text.SimpleDateFormat("MMM dd HH:mm", java.util.Locale.US).format(java.util.Date(it)) } ?: "—"
+                    appendLine("• [${t.id}] ${t.name} | ${t.triggerType} | next: $nextStr | status: ${t.status}")
+                }
+            }.trim()
+        }
+    }
+
+    override suspend fun cancelScheduledTask(taskId: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("cancelScheduledTask", "id=$taskId")
+        runCatching {
+            val repo = getTaskRepository()
+                ?: return@runCatching "Task scheduler not initialized."
+            getTaskScheduler().cancelTask(taskId)
+            repo.deleteTask(taskId)
+            "Task $taskId cancelled and removed."
+        }
+    }
+
+    override suspend fun getTaskHistory(limit: Int): Result<String> = withContext(Dispatchers.IO) {
+        logAction("getTaskHistory", "limit=$limit")
+        runCatching {
+            val repo = getTaskRepository()
+                ?: return@runCatching "Task scheduler not initialized."
+            val history = repo.getTaskHistory(limit)
+            if (history.isEmpty()) return@runCatching "No task history yet."
+            buildString {
+                appendLine("Task history (last ${history.size}):")
+                history.forEach { t ->
+                    val runStr = t.lastRunAt?.let { java.text.SimpleDateFormat("MMM dd HH:mm", java.util.Locale.US).format(java.util.Date(it)) } ?: "—"
+                    appendLine("• [${t.id}] ${t.name} | ${t.status} | ran: $runStr")
+                    t.result?.take(100)?.let { appendLine("  → $it") }
+                }
+            }.trim()
+        }
+    }
+
+    override suspend fun runTaskNow(taskId: String): Result<String> = withContext(Dispatchers.IO) {
+        logAction("runTaskNow", "id=$taskId")
+        runCatching {
+            val repo = getTaskRepository()
+                ?: return@runCatching "Task scheduler not initialized."
+            val task = repo.getTask(taskId)
+                ?: return@runCatching "Task $taskId not found."
+
+            // Execute steps directly
+            val steps = kotlinx.serialization.json.Json.decodeFromString<List<com.androidclaw.app.scheduler.TaskStep>>(task.steps)
+            val results = mutableListOf<String>()
+            var succeeded = 0
+
+            for (step in steps) {
+                try {
+                    val r = executeScheduledStep(step)
+                    results.add("✓ ${step.action}: $r")
+                    succeeded++
+                } catch (e: Exception) {
+                    results.add("✗ ${step.action}: ${e.message}")
+                }
+            }
+
+            val summary = "$succeeded/${steps.size} steps succeeded"
+            repo.markDone(taskId, summary)
+            "$summary\n${results.joinToString("\n")}"
+        }
+    }
+
+    private suspend fun executeScheduledStep(step: com.androidclaw.app.scheduler.TaskStep): String {
+        return when (step.action) {
+            "launch_app" -> launchApp(step.params["package"] ?: "").getOrThrow()
+            "set_volume" -> setVolume(step.params["stream"] ?: "music", step.params["level"]?.toIntOrNull() ?: 50).getOrThrow()
+            "set_brightness" -> setBrightness(step.params["level"]?.toIntOrNull() ?: 50).getOrThrow()
+            "set_dnd" -> setDoNotDisturb(step.params["enabled"]?.toBooleanStrictOrNull() ?: true).getOrThrow()
+            "set_wifi" -> setWifiEnabled(step.params["enabled"]?.toBooleanStrictOrNull() ?: true).getOrThrow()
+            "play_music" -> playMusic(step.params["query"] ?: "", step.params["app"] ?: "").getOrThrow()
+            "set_alarm" -> setAlarm(step.params["hour"]?.toIntOrNull() ?: 7, step.params["minute"]?.toIntOrNull() ?: 0, step.params["label"] ?: "").getOrThrow()
+            "open_url" -> openUrl(step.params["url"] ?: "").getOrThrow()
+            "navigate" -> navigateTo(step.params["destination"] ?: "").getOrThrow()
+            "apply_mode" -> applyDeviceMode(step.params["mode"] ?: "normal").getOrThrow()
+            "read_aloud" -> readAloud(step.params["text"] ?: "").getOrThrow()
+            "vision_tap" -> visionFindAndTap(step.params["target"] ?: "").getOrThrow()
+            else -> "Unknown step action: ${step.action}"
+        }
+    }
 }

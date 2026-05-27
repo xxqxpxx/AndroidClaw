@@ -56,6 +56,9 @@ kotlin {
             implementation(libs.porcupine.android)
             implementation(libs.onnxruntime.android)
             implementation(libs.mediapipe.genai)
+
+            // WorkManager for scheduled tasks
+            implementation("androidx.work:work-runtime-ktx:2.9.1")
         }
     }
 }
